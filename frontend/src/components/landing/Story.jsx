@@ -1,20 +1,31 @@
 import { useRef } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { STORY, IMAGES, WHY } from "@/data/content";
+import { STORY, WHY } from "@/data/content";
 import { Reveal } from "@/components/Reveal";
 import * as Icons from "lucide-react";
+import heroGirlImage from "@/images/heroGirl.jpeg";
+import eyeImage from "@/images/eye.jpeg";
+import thirdImage from "@/images/thirdImage.png";
+
+const STORY_IMAGES = [heroGirlImage, eyeImage, thirdImage];
 
 // ─── Desktop: scroll-linked sticky chapter ───────────────────────────────────
 const DesktopChapter = ({ c, i, progress }) => {
   const start = i / STORY.length;
+  const fromLeft = i % 2 === 0;
   const opacity = useTransform(
     progress,
     [start - 0.1, start + 0.08, start + 0.28, start + 0.4],
     [0.15, 1, 1, i === STORY.length - 1 ? 1 : 0.15]
   );
+  const x = useTransform(
+    progress,
+    [start - 0.1, start + 0.08, start + 0.28, start + 0.4],
+    [fromLeft ? -40 : 40, 0, 0, fromLeft ? 40 : -40]
+  );
   return (
     <motion.div
-      style={{ opacity }}
+      style={{ opacity, x }}
       className="flex min-h-[70vh] flex-col justify-center"
       data-testid={`story-chapter-${c.n}`}
     >
@@ -29,8 +40,33 @@ const DesktopChapter = ({ c, i, progress }) => {
   );
 };
 
+const DesktopChapterImage = ({ src, i, progress, scale, hue }) => {
+  const start = i / STORY_IMAGES.length;
+  const end = (i + 1) / STORY_IMAGES.length;
+  const fromLeft = i % 2 === 0;
+  const opacity = useTransform(
+    progress,
+    [Math.max(0, start - 0.08), start + 0.08, end - 0.08, Math.min(1, end + 0.08)],
+    [i === 0 ? 1 : 0, 1, 1, i === STORY_IMAGES.length - 1 ? 1 : 0]
+  );
+  const x = useTransform(
+    progress,
+    [Math.max(0, start - 0.08), start + 0.08, end - 0.08, Math.min(1, end + 0.08)],
+    [i === 0 ? 0 : fromLeft ? -60 : 60, 0, 0, fromLeft ? 60 : -60]
+  );
+
+  return (
+    <motion.img
+      src={src}
+      alt=""
+      style={{ opacity, x, scale, filter: hue }}
+      className="absolute inset-0 h-full w-full object-cover object-top"
+    />
+  );
+};
+
 // ─── Mobile: alternating entrance animations, no sticky / scroll-link ────────
-const MobileChapter = ({ c, i }) => {
+const MobileChapter = ({ c, i, image }) => {
   const fromLeft = i % 2 === 0;
   return (
     <motion.div
@@ -42,9 +78,9 @@ const MobileChapter = ({ c, i }) => {
       transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
     >
       {/* Chapter image */}
-      <div className="glass glow-border mb-5 overflow-hidden rounded-2xl">
+      <div className="glass glow-border relative mb-5 overflow-hidden rounded-2xl">
         <img
-          src={IMAGES.heroGirl}
+          src={image}
           alt={`Chapter ${c.n} — ${c.tag}`}
           className="h-52 w-full object-cover object-top"
           style={{ filter: `hue-rotate(${i * -8}deg)` }}
@@ -69,8 +105,7 @@ export default function Story() {
     target: ref,
     offset: ["start start", "end end"],
   });
-  const eyeOpacity = useTransform(scrollYProgress, [0.25, 0.5], [0, 1]);
-  const girlScale = useTransform(scrollYProgress, [0, 1], [1.15, 1]);
+  const imageScale = useTransform(scrollYProgress, [0, 1], [1.15, 1]);
   const hue = useTransform(
     scrollYProgress,
     [0, 1],
@@ -88,18 +123,16 @@ export default function Story() {
         {/* Sticky image panel */}
         <div className="sticky top-0 flex h-screen items-center">
           <div className="glass glow-border relative h-[78vh] w-full overflow-hidden rounded-[2rem]">
-            <motion.img
-              src={IMAGES.heroGirl}
-              alt=""
-              style={{ scale: girlScale, filter: hue }}
-              className="absolute inset-0 h-full w-full object-cover object-top"
-            />
-            <motion.img
-              src={IMAGES.eye}
-              alt=""
-              style={{ opacity: eyeOpacity }}
-              className="absolute inset-0 h-full w-full object-cover"
-            />
+            {STORY_IMAGES.map((image, i) => (
+              <DesktopChapterImage
+                key={image}
+                src={image}
+                i={i}
+                progress={scrollYProgress}
+                scale={imageScale}
+                hue={hue}
+              />
+            ))}
             <div className="absolute inset-0 bg-gradient-to-t from-jet via-transparent to-transparent" />
             <div className="scanline" />
             <div className="absolute bottom-6 left-6 right-6 flex items-end justify-between">
@@ -143,7 +176,7 @@ export default function Story() {
           </h2>
         </div>
         {STORY.map((c, i) => (
-          <MobileChapter key={c.n} c={c} i={i} />
+          <MobileChapter key={c.n} c={c} i={i} image={STORY_IMAGES[i]} />
         ))}
       </div>
 

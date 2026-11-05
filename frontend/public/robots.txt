@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /auth
+Disallow: /activate
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /dashboard
+Disallow: /judge
+Disallow: /reveal
+Disallow: /account/
+Disallow: /arena/play
+
+Sitemap: https://www.sankalp26.in/sitemap.xml
