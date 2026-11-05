@@ -1,6 +1,11 @@
+import heroGirl from "../images/heroGirl.jpeg";
+import eye from "../images/eye.jpeg";
+import thirdImage from "../images/thirdImage.png";
+
 export const IMAGES = {
-  heroGirl: "https://static.prod-images.emergentagent.com/jobs/45919481-d23e-48d3-85d9-441490b2e1de/images/ea49031cd2791de195ac1a58c3a5303133fb17442f208279d99f46ad8a1b0623.jpeg",
-  eye: "https://static.prod-images.emergentagent.com/jobs/45919481-d23e-48d3-85d9-441490b2e1de/images/ca3c8eb3738ea6e36563b963cf7fd61c709ffbd4028ba7e9c424984e4e39cb9f.jpeg",
+  heroGirl: heroGirl,
+  eye: eye,
+  thirdImage: thirdImage
 };
 
 export const EVENT_START = "2026-11-27T09:00:00+05:30";
@@ -60,7 +65,7 @@ export const HOSTS = [
 ];
 
 export const SPONSORS = [
-  { name: "BRAVYNEX", sub: "ENGINEERING", color: "#c65bff" },
+  { name: "BRAVYNEX ENGINEERING", sub: "Cultivating Success Together", color: "#c65bff" },
   { name: "Binary Waves", sub: "connect & communicate", color: "#3fa2ff" },
 ];
 
