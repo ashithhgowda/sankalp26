@@ -1,0 +1,110 @@
+{
+  "project_name": "SANKALP'26 Hackathon",
+  "archetype": "Electric Cyber-Luxury & Editorial Sci-Fi",
+  "theme": "Dark Mode Only - Jet Black #0A0A0A base",
+  "file_type_notice": "The project uses JavaScript (.js / .jsx) files. Ensure imports and JSX syntax are strictly valid JS.",
+  "brand_identity": {
+    "title": "SANKALP'26",
+    "tagline": "Ideas Today, A Brighter Tomorrow",
+    "motto": "Build. Breakthrough. Belong.",
+    "dates": "27 & 28 NOV 2026",
+    "prize_pool": "₹75,000",
+    "organizers": ["IEEE AJIET SB", "IEEE Mangalore Subsection", "AJIET Mangalore"],
+    "sponsors": ["Bravynex Engineering", "Binary Waves"]
+  },
+  "colors": {
+    "jet_black": "#0A0A0A",
+    "cerulean_blue": "#007BA7",
+    "neon_rose": "#FF2D95",
+    "electric_cyan": "#00F0FF",
+    "dark_surface": "#121214",
+    "dark_card": "#18181C",
+    "glass_border": "rgba(255, 255, 255, 0.12)",
+    "glass_border_cyan": "rgba(0, 123, 167, 0.35)",
+    "glass_border_pink": "rgba(255, 45, 149, 0.35)",
+    "gradients": {
+      "wordmark_gradient": "bg-gradient-to-r from-[#007BA7] via-[#00F0FF] to-[#FF2D95] bg-clip-text text-transparent",
+      "cyan_pink_glow": "linear-gradient(135deg, rgba(0, 123, 167, 0.25) 0%, rgba(255, 45, 149, 0.25) 100%)",
+      "card_hover_beam": "linear-gradient(90deg, transparent, #007BA7, #FF2D95, transparent)"
+    }
+  },
+  "typography": {
+    "headline_font": "'Rajdhani', 'Outfit', sans-serif",
+    "editorial_font": "'Syne', 'Chakra Petch', sans-serif",
+    "tech_mono_font": "'JetBrains Mono', 'Fira Code', monospace",
+    "font_rules": "BANNED: Inter, Roboto, Space Grotesk. Headings must use Rajdhani or Syne with tracking-tight/uppercase editorial flair. Code snippets and technical indicators must use JetBrains Mono.",
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl font-black uppercase tracking-tight",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl font-bold uppercase tracking-wide",
+      "h3": "text-xl sm:text-2xl font-semibold tracking-normal",
+      "body": "text-sm sm:text-base text-gray-300 leading-relaxed font-sans",
+      "mono_label": "text-xs uppercase tracking-[0.25em] font-mono text-[#00F0FF]"
+    }
+  },
+  "glassmorphism_tokens": {
+    "nav_glass": "backdrop-blur-xl bg-[#0A0A0A]/80 border-b border-white/10 shadow-[0_4px_30px_rgba(0,0,0,0.5)]",
+    "hero_card_glass": "backdrop-blur-2xl bg-white/[0.03] border border-white/15 shadow-[0_8px_32px_0_rgba(0,0,0,0.37)] backdrop-saturate-150",
+    "hud_panel_glass": "backdrop-blur-lg bg-[#121214]/90 border border-[#007BA7]/30 shadow-[0_0_15px_rgba(0,123,167,0.15)]",
+    "modal_overlay": "backdrop-blur-2xl bg-[#0A0A0A]/85"
+  },
+  "motion_plan": {
+    "intro_reveal": "2.8 second cinematic full-screen logo reveal on application load. Black screen -> Cyan/Pink pulse vector logo -> SANKALP'26 text shatter/glitch reveal -> smooth slide-up curtain exit into Neon Girl Hero.",
+    "hero_entry": "Staggered fade & slide up for editorial typography on left, 3D scale and glow pulse for Neon Girl key art on right.",
+    "scroll_reveal": "Framer motion opacity 0 -> 1 and translateY(20px -> 0px) with spring physics.",
+    "micro_interactions": "Glowing tracing borders on hover, scale-95 on button click, HUD cyan scanner line loops across track cards."
+  },
+  "image_urls": {
+    "hero_neon_girl_key_art": "https://images.unsplash.com/photo-1520563683082-7ef74b616a89?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxNzV8MHwxfHNlYXJjaHwzfHxjeWJlcnB1bmslMjBuZW9uJTIwd29tYW4lMjBjeWFuJTIwcGluayUyMHBvcnRyYWl0fGVufDB8fHx8MTc5MzA4OTU4NHww&ixlib=rb-4.1.0&q=85",
+    "about_cyber_portrait": "https://images.unsplash.com/photo-1559828801-04565cd31e27?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxNzV8MHwxfHNlYXJjaHw0fHxjeWJlcnB1bmslMjBuZW9uJTIwd29tYW4lMjBjeWFuJTIwcGluayUyMHBvcnRyYWl0fGVufDB8fHx8MTc5MzA4OTU4NHww&ixlib=rb-4.1.0&q=85",
+    "sponsors_graphic": "https://images.unsplash.com/photo-1638864616270-64041b699a50?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTJ8MHwxfHNlYXJjaHwxfHx0ZWNobm9sb2d5JTIwc3BvbnNvciUyMGxvZ28lMjBtaW5pbWFsfGVufDB8fHx8MTc5MzA4OTU4NHww&ixlib=rb-4.1.0&q=85"
+  },
+  "section_blueprints": {
+    "landing_page": [
+      "Cinematic Intro Reveal (2.8s intro animation with state toggle for complete skip)",
+      "Floating Glass Navbar (Logo with cyan->pink gradient, links: About, Tracks, Schedule, Prizes, Sponsors, FAQ, CTA 'Register Now')",
+      "HUMAN NEXT Style Hero (Left column: Big bold editorial typography, countdown timer to Nov 27, live stats '₹75,000 Prize Pool', '24 Hours', action buttons 'Register Team' and 'Submit Project'. Right column: Neon Girl Cyborg portrait with glowing cyan/pink rim lighting & ambient backdrop beam)",
+      "About & Theme Narrative ('The Story of SANKALP'26' - Ideas Today, A Brighter Tomorrow. High contrast grid with HUD badges for IEEE AJIET SB & AJIET Mangalore)",
+      "Tracks & Themes Grid (6 interactive bento cards: AI/ML & Cybernetics, Web3 & Decentralized Systems, FinTech & Quantum Commerce, Smart Cities & IoT, Healthcare & MedTech, Open Innovation - with HUD filter & dynamic tags)",
+      "24-Hour Hackathon Timeline (Vertical interactive timeline showing Day 1 & Day 2 milestones with live status indicators)",
+      "Prize Pool Breakdown (₹75,000 total: 1st ₹35,000, 2nd ₹20,000, 3rd ₹10,000, Best All-Girls Team ₹5,000, Best Beginner Team ₹5,000 with glowing metallic podium cards)",
+      "Sponsors & Organizers Section (Bravynex Engineering, Binary Waves, IEEE Mangalore Subsection, AJIET SB with high-gloss monochrome cards & cyan hover state)",
+      "FAQs Accordion (Shadcn customized with glowing neon borders & smooth expand)",
+      "Footer (Deep jet black with cyan/pink subtle gradient separator, IEEE copyright, quick links, contact address in Mangalore)"
+    ],
+    "portals_and_dashboards": {
+      "auth_portal": "Glassmorphism modal / full page with tabs for Team Registration (Team Name, Leader Email, Password, College, Member details) and Login (Email, Password JWT token store).",
+      "team_submission_portal": "HUD dashboard with project status banner, form fields (Project Title, Short Tagline, GitHub Repo URL, Live Demo Link, Video Pitch YouTube URL, Selected Track, Tech Stack tags, Markdown Detailed Description).",
+      "judge_evaluation_portal": "Compact data-dense dashboard. Filter submissions by track. Side-by-side split view: Left = submission links & video embed, Right = scoring slider criteria (Innovation 25%, Technical Complexity 25%, Feasibility 25%, UX/Presentation 25%, Total auto-calc) + Comments box + Submit Score button.",
+      "leaderboard_portal": "Real-time rank list table with gold/silver/bronze highlight badges, team scores breakdown, live search, track filters, and export option.",
+      "admin_dashboard": "Control center with overview stats cards (Total Teams, Submissions, Active Judges, Evaluation Progress %), Team Management table, Judge Allocation modal, Round Control toggle switch (Registration Open -> Hackathon Active -> Evaluation Phase -> Winner Announcement)."
+    }
+  },
+  "data_testid_conventions": {
+    "rule": "All interactive elements, buttons, inputs, links, forms, tabs, and key metrics MUST have data-testid in kebab-case format.",
+    "examples": [
+      "data-testid='nav-register-button'",
+      "data-testid='hero-register-cta'",
+      "data-testid='hero-countdown-timer'",
+      "data-testid='track-card-ai-ml'",
+      "data-testid='register-team-name-input'",
+      "data-testid='register-submit-button'",
+      "data-testid='login-email-input'",
+      "data-testid='login-submit-button'",
+      "data-testid='submission-github-url-input'",
+      "data-testid='submission-submit-button'",
+      "data-testid='judge-score-innovation-slider'",
+      "data-testid='judge-submit-evaluation-button'",
+      "data-testid='leaderboard-rank-row-1'",
+      "data-testid='admin-round-control-toggle'"
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Load Google Fonts 'Rajdhani', 'Syne', and 'JetBrains Mono' in index.html or index.css.",
+    "Enforce Jet Black (#0A0A0A) background globally and prevent light-theme white flashes.",
+    "Implement the 2.8s full-screen intro animation with Framer Motion, persisting 'hasSeenIntro' in sessionStorage so reloads feel smooth.",
+    "Build the hero with the HUMAN NEXT editorial dual-column layout: text left, cyberpunk neon girl right with cyan/pink glassmorphism filters.",
+    "Ensure all forms use mock/JWT local storage logic so full end-to-end registration, submission, judge scoring, and admin controls work seamlessly.",
+    "Ensure every interactive element has a proper data-testid attribute.",
+    "Strictly avoid 'Inter' or 'Space Grotesk' fonts for headings."
+  ]
+}
