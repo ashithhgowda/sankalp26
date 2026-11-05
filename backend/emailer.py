@@ -21,6 +21,24 @@ def _configured(value: str) -> bool:
     value = value.strip().lower()
     return bool(value) and not any(marker in value for marker in ("your-", "replace-with", "changeme", "example.com", ".example", "<"))
 
+
+def _brevo_api_key() -> str:
+    raw_key = os.environ.get("BREVO_API_KEY", "")
+    key = raw_key.strip()
+    normalized = key != raw_key
+    if len(key) >= 2 and key[0] == key[-1] and key[0] in ("'", '"'):
+        key = key[1:-1].strip()
+        normalized = True
+    if normalized:
+        logger.warning("BREVO_API_KEY had surrounding whitespace or quotes; these were removed")
+    if any(character.isspace() for character in key):
+        logger.error("BREVO_API_KEY is invalid: it contains internal whitespace")
+        return ""
+    if key and not key.startswith("xkeysib-"):
+        logger.warning("BREVO_API_KEY does not have the expected Brevo API-key prefix; verify it is not an SMTP credential")
+    return key
+
+
 _SHORTENERS = ("bit.ly", "tinyurl.com", "t.co", "is.gd", "cutt.ly", "goo.gl", "rebrand.ly")
 _CRED_ASK = ("reply with your password", "reply with the code", "send your password", "cvv",
              "send us your password", "enter your password below", "confirm your card number",
@@ -135,7 +153,13 @@ async def _send_brevo_api(*, to: str, subject: str, html: str, from_name: str,
             response_data = {}
         return response_data.get("messageId") or "accepted"
     except httpx.HTTPStatusError as exc:
-        logger.error("Brevo API rejected delivery (HTTP %s)", exc.response.status_code)
+        if exc.response.status_code == 401:
+            logger.error(
+                "Brevo API authentication failed (HTTP 401); BREVO_API_KEY was sent in the api-key header. "
+                "Verify it is an active Brevo v3 API key, not an SMTP key."
+            )
+        else:
+            logger.error("Brevo API rejected delivery (HTTP %s)", exc.response.status_code)
     except httpx.TimeoutException as exc:
         logger.error("Brevo API request timed out (%s)", type(exc).__name__)
     except httpx.RequestError as exc:
@@ -158,7 +182,7 @@ async def send_email(*, to: str, subject: str, html: str):
         logger.error("Email delivery is not configured: EMAIL_FROM_NAME is missing")
         return None
 
-    brevo_api_key = os.environ.get("BREVO_API_KEY", "").strip()
+    brevo_api_key = _brevo_api_key()
     if _configured(brevo_api_key):
         from_address = os.environ.get("SMTP_FROM_EMAIL", "").strip()
         if not _configured(from_address):
@@ -173,6 +197,8 @@ async def send_email(*, to: str, subject: str, html: str):
             reply_to=os.environ.get("EMAIL_REPLY_TO", "").strip(),
             api_key=brevo_api_key,
         )
+    if os.environ.get("BREVO_API_KEY", "").strip():
+        logger.error("BREVO_API_KEY is configured but invalid or still a placeholder")
 
     base_url = os.environ.get("INTEGRATION_PROXY_URL", "").strip().rstrip("/")
     email_key = os.environ.get("EMERGENT_EMAIL_KEY", "").strip()
