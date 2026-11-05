@@ -13,6 +13,8 @@ def _configure_brevo(monkeypatch):
     monkeypatch.setenv("BREVO_API_KEY", BREVO_API_KEY)
     monkeypatch.setenv("EMAIL_FROM_NAME", "SANKALP'26")
     monkeypatch.setenv("SMTP_FROM_EMAIL", "verified@example.org")
+    monkeypatch.setenv("SMTP_USERNAME", "smtp-user-must-not-be-used")
+    monkeypatch.setenv("SMTP_PASSWORD", "smtp-password-must-not-be-used")
     monkeypatch.setenv("EMAIL_REPLY_TO", "replies@example.org")
     monkeypatch.delenv("INTEGRATION_PROXY_URL", raising=False)
     monkeypatch.delenv("EMERGENT_EMAIL_KEY", raising=False)
@@ -50,6 +52,9 @@ def test_send_email_uses_brevo_transactional_api(monkeypatch):
     assert request.method == "POST"
     assert str(request.url) == "https://api.brevo.com/v3/smtp/email"
     assert request.headers["api-key"] == BREVO_API_KEY
+    assert request.headers.get("authorization") is None
+    assert "smtp-user-must-not-be-used" not in request.headers["api-key"]
+    assert "smtp-password-must-not-be-used" not in request.headers["api-key"]
     assert request.read() == (
         b'{"sender":{"name":"SANKALP\'26","email":"verified@example.org"},'
         b'"to":[{"email":"recipient@example.org"}],"subject":"Judge invitation",'
@@ -74,8 +79,51 @@ def test_send_email_returns_none_for_brevo_api_rejection(monkeypatch, caplog):
 
     assert receipt is None
     assert "HTTP 401" in caplog.text
+    assert "sent in the api-key header" in caplog.text
+    assert "not an SMTP key" in caplog.text
     assert BREVO_API_KEY not in caplog.text
     assert RECIPIENT not in caplog.text
+
+
+def test_send_email_trims_quoted_brevo_key_without_logging_it(monkeypatch, caplog):
+    _configure_brevo(monkeypatch)
+    monkeypatch.setenv("BREVO_API_KEY", f'  "{BREVO_API_KEY}"  ')
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(201, json={"messageId": "<brevo-message-id>"})
+
+    _mock_http_client(monkeypatch, handler)
+    receipt = asyncio.run(emailer.send_email(
+        to=RECIPIENT, subject="Judge invitation", html="<p>Activation</p>"
+    ))
+
+    assert receipt == "<brevo-message-id>"
+    assert requests[0].headers["api-key"] == BREVO_API_KEY
+    assert "surrounding whitespace or quotes" in caplog.text
+    assert BREVO_API_KEY not in caplog.text
+    assert RECIPIENT not in caplog.text
+
+
+def test_send_email_does_not_send_key_with_internal_whitespace(monkeypatch, caplog):
+    _configure_brevo(monkeypatch)
+    monkeypatch.setenv("BREVO_API_KEY", "xkeysib-invalid key")
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(201, json={"messageId": "<brevo-message-id>"})
+
+    _mock_http_client(monkeypatch, handler)
+    receipt = asyncio.run(emailer.send_email(
+        to=RECIPIENT, subject="Judge invitation", html="<p>Activation</p>"
+    ))
+
+    assert receipt is None
+    assert requests == []
+    assert "contains internal whitespace" in caplog.text
+    assert "xkeysib-invalid key" not in caplog.text
 
 
 def test_send_email_returns_none_on_brevo_timeout(monkeypatch, caplog):
