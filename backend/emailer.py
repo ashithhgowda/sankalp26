@@ -108,6 +108,43 @@ def _assert_safe_email(subject: str, html: str) -> None:
                 raise ValueError("G3: email anchor text host does not match its destination host")
 
 
+async def _send_brevo_api(*, to: str, subject: str, html: str, from_name: str,
+                          from_address: str, reply_to: str, api_key: str):
+    payload = {
+        "sender": {"name": from_name, "email": from_address},
+        "to": [{"email": to}],
+        "subject": subject,
+        "htmlContent": html,
+    }
+    if reply_to:
+        payload["replyTo"] = {"email": reply_to}
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                "https://api.brevo.com/v3/smtp/email",
+                headers={"api-key": api_key},
+                json=payload,
+            )
+        response.raise_for_status()
+        try:
+            response_data = response.json()
+        except ValueError:
+            response_data = {}
+        if not isinstance(response_data, dict):
+            response_data = {}
+        return response_data.get("messageId") or "accepted"
+    except httpx.HTTPStatusError as exc:
+        logger.error("Brevo API rejected delivery (HTTP %s)", exc.response.status_code)
+    except httpx.TimeoutException as exc:
+        logger.error("Brevo API request timed out (%s)", type(exc).__name__)
+    except httpx.RequestError as exc:
+        logger.error("Brevo API connection failed (%s)", type(exc).__name__)
+    except Exception as exc:
+        logger.error("Brevo API delivery failed (%s)", type(exc).__name__)
+    return None
+
+
 async def send_email(*, to: str, subject: str, html: str):
     """Return a transport receipt on acceptance, or None when delivery cannot be attempted."""
     try:
@@ -120,6 +157,22 @@ async def send_email(*, to: str, subject: str, html: str):
     if not from_name:
         logger.error("Email delivery is not configured: EMAIL_FROM_NAME is missing")
         return None
+
+    brevo_api_key = os.environ.get("BREVO_API_KEY", "").strip()
+    if _configured(brevo_api_key):
+        from_address = os.environ.get("SMTP_FROM_EMAIL", "").strip()
+        if not _configured(from_address):
+            logger.error("Brevo API delivery is not configured: SMTP_FROM_EMAIL is missing or invalid")
+            return None
+        return await _send_brevo_api(
+            to=to,
+            subject=subject,
+            html=html,
+            from_name=from_name,
+            from_address=from_address,
+            reply_to=os.environ.get("EMAIL_REPLY_TO", "").strip(),
+            api_key=brevo_api_key,
+        )
 
     base_url = os.environ.get("INTEGRATION_PROXY_URL", "").strip().rstrip("/")
     email_key = os.environ.get("EMERGENT_EMAIL_KEY", "").strip()
@@ -161,7 +214,7 @@ async def send_email(*, to: str, subject: str, html: str):
         logger.error("Email delivery is not configured: SMTP_PORT must be an integer")
         return None
     if not all(_configured(value) for value in (smtp_host, smtp_username, smtp_password, smtp_from)):
-        logger.error("Email delivery is not configured: provide valid integration settings or SMTP credentials")
+        logger.error("Email delivery is not configured: provide a Brevo API key, valid integration settings, or SMTP credentials")
         return None
 
     try:
