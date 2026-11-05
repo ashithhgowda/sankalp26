@@ -1,7 +1,13 @@
-import { HOSTS, SPONSORS, TEAM } from "@/data/content";
+import { HOSTS, TEAM } from "@/data/content";
 import { Reveal, SectionHead } from "@/components/Reveal";
+import bravynexLogo from "@/images/organizer1.jpeg";
+import binaryWavesLogo from "@/images/organizer2.jpeg";
 
 const TICKER = ["AJIET", "IEEE", "Innovation", "ECE", "Sustainability", "Smart Tech", "Build", "Breakthrough", "Belong"];
+const SPONSOR_LOGOS = [
+  { src: bravynexLogo, alt: "Bravynex Engineering" },
+  { src: binaryWavesLogo, alt: "Binary Waves" },
+];
 
 export default function Organizers() {
   return (
@@ -27,15 +33,15 @@ export default function Organizers() {
         </div>
 
         <p className="eyebrow mb-6 mt-16">Our sponsors</p>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {SPONSORS.map((s, i) => (
-            <Reveal key={s.name} delay={i * 0.1}>
-              <div data-testid={`sponsor-card-${i}`} className="glass glow-border card-scan flex items-center gap-6 rounded-[1.75rem] p-8 transition-transform duration-500 hover:-translate-y-1">
-                <span className="h-14 w-14 shrink-0 rounded-full" style={{ background: `radial-gradient(circle at 30% 30%, #fff, ${s.color} 45%, #0a0a0a)`, boxShadow: `0 0 30px ${s.color}80` }} />
-                <div>
-                  <p className="font-editorial text-2xl font-extrabold uppercase tracking-wide text-white sm:text-3xl">{s.name}</p>
-                  <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-white/50">{s.sub}</p>
-                </div>
+        <div className="grid max-w-md grid-cols-2 gap-4">
+          {SPONSOR_LOGOS.map((sponsor, i) => (
+            <Reveal key={sponsor.alt} delay={i * 0.1}>
+              <div data-testid={`sponsor-card-${i}`} className="glass glow-border card-scan flex items-center justify-center rounded-[1.75rem] p-4 transition-transform duration-500 hover:-translate-y-1">
+                <img
+                  src={sponsor.src}
+                  alt={sponsor.alt}
+                  className="h-20 w-20 rounded-md object-contain"
+                />
               </div>
             </Reveal>
           ))}
