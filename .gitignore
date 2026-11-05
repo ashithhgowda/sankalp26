@@ -102,3 +102,15 @@ credentials.json
 archive.zip
 archive/frontend/node_modules/.cache/default-development/0.pack
 frontend/node_modules/.cache/default-development/0.pack
+
+# Private uploads
+uploads/
+private_uploads/
+
+# Generated files
+.emergent/
+.screenshots/
+test_reports/
+
+# Local configuration
+.gitconfig
