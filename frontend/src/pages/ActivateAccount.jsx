@@ -20,7 +20,7 @@ export default function ActivateAccount() {
   }, [token]);
   const submit = async (event) => {
     event.preventDefault();
-    if (info.purpose === "judge_activation" && password !== confirm) return toast.error("Passwords do not match");
+    if (info.purpose !== "verify_email" && password !== confirm) return toast.error("Passwords do not match");
     setBusy(true);
     try {
       const user = await activate({ token, password: info.purpose === "verify_email" ? null : password });
@@ -35,7 +35,7 @@ export default function ActivateAccount() {
           <ShieldCheck className="text-ice" />
           <div><p className="eyebrow">Secure activation</p><h1 className="mt-2 font-editorial text-3xl font-bold uppercase text-white">Welcome, {info.name}</h1><p className="mt-2 text-sm text-white/55">{info.email_hint}</p></div>
           {info.purpose !== "verify_email" && <label><span className="field-label">Create your private password</span><input type="password" minLength={12} required className="field" value={password} onChange={(e) => setPassword(e.target.value)} data-testid="activate-password-input" /><span className="mt-2 block text-xs text-white/40">12+ characters with upper, lower, number and symbol.</span></label>}
-          {info.purpose === "judge_activation" && <label><span className="field-label">Confirm your password</span><input type="password" minLength={12} required className="field" value={confirm} onChange={(e) => setConfirm(e.target.value)} data-testid="activate-confirm-password-input" /></label>}
+          {info.purpose !== "verify_email" && <label><span className="field-label">Confirm your password</span><input type="password" minLength={12} required className="field" value={confirm} onChange={(e) => setConfirm(e.target.value)} data-testid="activate-confirm-password-input" /></label>}
           <button className="btn-neon w-full" disabled={busy} data-testid="activate-submit-button">{busy ? <Loader2 className="animate-spin" /> : <><CheckCircle2 /> Activate account</>}</button>
         </form>}
     </section>

@@ -277,6 +277,68 @@ def build_router(db, current_user, require, hash_password, create_invitation):
     admin = require("admin")
     judge = require("judge", "admin")
 
+    async def send_member_invitation(membership, team, actor, request):
+        if membership.get("role") != "member":
+            raise HTTPException(404, "Team member not found")
+        team_id = team["team_id"]
+        target = None
+        member_id = membership.get("user_id")
+        if member_id and ObjectId.is_valid(member_id):
+            target = await db.users.find_one({"_id": ObjectId(member_id)})
+        if not target:
+            email = normalize_email(membership["email"])
+            target = await db.users.find_one({"email": email})
+            if target:
+                if target.get("role") != "member" or target.get("team_id") != team_id:
+                    raise HTTPException(409, "This email is already associated with another account")
+                member_id = str(target["_id"])
+                await db.team_memberships.update_one(
+                    {"membership_id": membership["membership_id"], "team_id": team_id},
+                    {"$set": {"user_id": member_id}},
+                )
+            else:
+                member_id = str(ObjectId())
+                member_doc = {
+                    "_id": ObjectId(member_id),
+                    "email": email,
+                    "name": membership.get("name", "").strip(),
+                    "role": "member",
+                    "team_id": team_id,
+                    "password_hash": None,
+                    "is_active": False,
+                    "email_verified": False,
+                    "must_change_password": False,
+                    "session_version": 0,
+                    "team_name": team.get("name"),
+                    "college": membership.get("college") or team.get("college"),
+                    "usn": membership.get("usn"),
+                    "track": team.get("topic_title"),
+                    "created_at": now_iso(),
+                }
+                if member_doc["usn"] and await db.users.find_one({"usn": member_doc["usn"]}):
+                    raise HTTPException(409, "This member USN is already associated with another account")
+                try:
+                    await db.users.insert_one(member_doc)
+                except DuplicateKeyError as exc:
+                    raise HTTPException(409, "This member email or USN is already associated with another account") from exc
+                target = member_doc
+                await db.team_memberships.update_one(
+                    {"membership_id": membership["membership_id"], "team_id": team_id},
+                    {"$set": {"user_id": member_id}},
+                )
+        if (target.get("role") != "member" or target.get("team_id") != team_id
+                or normalize_email(target.get("email", "")) != normalize_email(membership.get("email", ""))):
+            raise HTTPException(409, "This account does not match the team member record")
+        if target.get("is_active") or target.get("password_hash"):
+            raise HTTPException(400, "This account is already active")
+        await db.invitations.update_many(
+            {"target_user_id": member_id, "purpose": "member_activation", "used_at": None, "revoked_at": None},
+            {"$set": {"revoked_at": now_iso()}},
+        )
+        invitation = await create_invitation(clean_doc(target), "member_activation", team_id, frontend_url(request), 72)
+        await audit(db, actor, "invitation.resent", "invitation", invitation["invitation_id"], request)
+        return {"ok": True, "email_status": invitation["email_status"]}
+
     @router.get("/public/meta")
     async def meta():
         return await public_meta(db)
@@ -311,16 +373,24 @@ def build_router(db, current_user, require, hash_password, create_invitation):
     @router.post("/invitations/{invitation_id}/resend")
     async def resend_invitation(invitation_id: str, request: Request, user=Depends(leader)):
         await enforce_rate_limit(db, f"invite:{user.id}", 5, 3600)
-        old = await db.invitations.find_one({"invitation_id": invitation_id, "team_id": _team_id(user), "purpose": "member_activation"})
-        if not old:
+        membership = await db.team_memberships.find_one({
+            "team_id": _team_id(user), "role": "member",
+            "$or": [{"invitation_id": invitation_id}, {"membership_id": invitation_id}],
+        }, {"_id": 0})
+        if not membership:
             raise HTTPException(404, "Invitation not found")
-        await db.invitations.update_one({"_id": old["_id"]}, {"$set": {"revoked_at": now_iso()}})
-        target = await db.users.find_one({"_id": ObjectId(old["target_user_id"])})
-        if not target or target.get("is_active"):
-            raise HTTPException(400, "This account is already active")
-        created = await create_invitation(target, "member_activation", old["team_id"], app_url(request), 72)
-        await audit(db, user, "invitation.resent", "invitation", created["invitation_id"], request)
-        return {"ok": True, "email_status": created["email_status"]}
+        team = await _team(db, user)
+        return await send_member_invitation(membership, team, user, request)
+
+    @router.post("/memberships/{membership_id}/invitation/resend")
+    async def resend_membership_invitation(membership_id: str, request: Request, user=Depends(leader)):
+        await enforce_rate_limit(db, f"invite:{user.id}", 5, 3600)
+        membership = await db.team_memberships.find_one({
+            "membership_id": membership_id, "team_id": _team_id(user), "role": "member",
+        }, {"_id": 0})
+        if not membership:
+            raise HTTPException(404, "Team member not found")
+        return await send_member_invitation(membership, await _team(db, user), user, request)
 
     @router.delete("/invitations/{invitation_id}")
     async def revoke_invitation(invitation_id: str, request: Request, user=Depends(leader)):
@@ -661,13 +731,39 @@ def build_router(db, current_user, require, hash_password, create_invitation):
             for membership in memberships:
                 member_user = await db.users.find_one(
                     {"_id": ObjectId(membership["user_id"])} if ObjectId.is_valid(membership.get("user_id", "")) else {"_id": None},
-                    {"_id": 0, "is_active": 1},
+                    {"_id": 0, "is_active": 1, "password_hash": 1},
                 )
                 membership["account_active"] = bool(member_user and member_user.get("is_active"))
+                membership["account_activated"] = bool(member_user and member_user.get("password_hash"))
+                expires_at = membership.get("invitation_expires_at")
+                if isinstance(expires_at, str):
+                    expires_at = datetime.fromisoformat(expires_at)
+                if isinstance(expires_at, datetime) and expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                membership["invitation_expired"] = bool(
+                    not membership["account_active"] and expires_at and expires_at <= now_utc()
+                )
+                membership["invitation_email_status"] = membership.get("invitation_email_status", "not_sent")
             app = await db.applications.find_one({"team_id": team["team_id"]}, {"_id": 0})
             payment = await db.payments.find_one({"team_id": team["team_id"]}, {"_id": 0})
             out.append({**team, "memberships": memberships, "application": app, "payment": payment})
         return out
+
+    @router.post("/admin/teams/{team_id}/members/{membership_id}/invitation/resend")
+    async def admin_resend_member_invitation(team_id: str, membership_id: str, request: Request, user=Depends(admin)):
+        await enforce_rate_limit(db, f"admin-invite:{user.id}", 20, 3600)
+        team = await db.teams.find_one({"team_id": team_id}, {"_id": 0})
+        if not team:
+            raise HTTPException(404, "Team not found")
+        membership = await db.team_memberships.find_one({
+            "membership_id": membership_id, "team_id": team_id, "role": "member",
+        }, {"_id": 0})
+        if not membership:
+            raise HTTPException(404, "Team member not found")
+        result = await send_member_invitation(membership, team, user, request)
+        await audit(db, user, "admin.member_invitation_resent", "membership", membership_id, request,
+                    {"team_id": team_id, "email_status": result["email_status"]})
+        return result
 
     @router.delete("/admin/teams/{team_id}")
     async def delete_team(team_id: str, request: Request, user=Depends(admin)):
