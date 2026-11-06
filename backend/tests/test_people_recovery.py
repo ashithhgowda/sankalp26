@@ -75,10 +75,12 @@ def api():
     server.db = motor_db
     try:
         app = FastAPI()
+        app.middleware("http")(server.security_middleware)
         app.add_api_route("/api/auth/activate", server.activate, methods=["POST"])
         app.add_api_route("/api/auth/forgot-password", server.forgot_password, methods=["POST"])
         app.add_api_route("/api/auth/invitations/inspect", server.inspect_invitation, methods=["POST"])
         app.add_api_route("/api/auth/login", server.login, methods=["POST"])
+        app.add_api_route("/api/auth/logout", server.logout, methods=["POST"])
         app.add_api_route("/api/auth/me", server.me, methods=["GET"])
         app.add_api_route("/api/auth/register", server.register, methods=["POST"], status_code=201)
         app.add_api_route("/api/auth/refresh", server.refresh, methods=["POST"])
@@ -676,11 +678,43 @@ def test_local_http_auth_session_cookies_and_expected_unauthenticated_401(api, m
     assert login.status_code == 200
     set_cookies = login.headers.get_list("set-cookie")
     assert all("secure" not in item.lower() for item in set_cookies)
-    assert http.get("/api/auth/me").status_code == 200
-    refreshed = http.post("/api/auth/refresh")
+    csrf = http.cookies.get("csrf_token")
+    assert http.get("/api/auth/me").headers["x-csrf-token"] == csrf
+    http.cookies.delete("access_token")
+    assert http.post("/api/auth/refresh").status_code == 403
+    refreshed = http.post("/api/auth/refresh", headers={"X-CSRF-Token": csrf})
     assert refreshed.status_code == 200
+    rotated_csrf = http.cookies.get("csrf_token")
+    assert rotated_csrf != csrf
+    http.cookies.delete("access_token")
+    stale_logout = http.post("/api/auth/logout", headers={"X-CSRF-Token": csrf})
+    assert stale_logout.status_code == 403
+    assert stale_logout.headers["x-csrf-token"] == rotated_csrf
+    logout = http.post("/api/auth/logout", headers={"X-CSRF-Token": rotated_csrf})
+    assert logout.status_code == 200
+    assert http.get("/api/auth/me").status_code == 401
     assert all("secure" not in item.lower() for item in refreshed.headers.get_list("set-cookie"))
+
+    login = http.post("/api/auth/login", json={"email": user["email"], "password": "Valid!Leader2026"})
+    assert login.status_code == 200
     assert http.get("/api/auth/me").status_code == 200
+    topic_id = f"csrf-upload-{uuid.uuid4().hex}"
+    db.teams.insert_one({"team_id": user["team_id"], "leader_id": str(user["_id"]), "name": "CSRF upload team"})
+    db.topics.insert_one({"topic_id": topic_id, "title": "CSRF upload topic", "enabled": True})
+    db.settings.update_one({"key": "timeline"}, {"$set": {"abstract_override": "open"}}, upsert=True)
+    upload = {
+        "data": {"topic_id": topic_id},
+        "files": {"file": ("abstract.pdf", b"%PDF-1.4 CSRF upload", "application/pdf")},
+    }
+    missing_csrf = http.post("/api/applications/abstract", **upload)
+    assert missing_csrf.status_code == 403
+    assert missing_csrf.headers["x-csrf-token"] == http.cookies.get("csrf_token")
+    uploaded = http.post(
+        "/api/applications/abstract",
+        headers={"X-CSRF-Token": login.json()["csrf_token"]},
+        **upload,
+    )
+    assert uploaded.status_code == 200, uploaded.text
 
     monkeypatch.setenv("APP_ENV", "production")
     production_user, _ = _auth_for(db, server, "team", str(ObjectId()))

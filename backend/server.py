@@ -338,13 +338,21 @@ async def create_invitation(target, purpose: str, team_id: Optional[str], base_u
 async def security_middleware(request: Request, call_next):
     unsafe = request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.url.path.startswith("/api/")
     bearer = request.headers.get("Authorization", "").startswith("Bearer ")
+    cookie_session = request.cookies.get("access_token") or request.cookies.get("refresh_token")
     exempt = request.url.path.startswith(("/api/auth/login", "/api/auth/register", "/api/auth/activate",
                                           "/api/auth/invitations/inspect", "/api/auth/forgot-password", "/api/auth/reset-password",
                                           "/api/auth/resend-activation"))
-    if unsafe and request.cookies.get("access_token") and not bearer and not exempt:
+    if unsafe and cookie_session and not bearer and not exempt:
         if not secrets.compare_digest(request.cookies.get("csrf_token", ""), request.headers.get("X-CSRF-Token", "")):
-            return Response(content='{"detail":"CSRF validation failed"}', status_code=403, media_type="application/json")
+            response = Response(content='{"detail":"CSRF validation failed"}', status_code=403, media_type="application/json")
+            csrf = request.cookies.get("csrf_token")
+            if csrf:
+                response.headers["X-CSRF-Token"] = csrf
+            return response
     response = await call_next(request)
+    csrf = request.cookies.get("csrf_token")
+    if csrf:
+        response.headers["X-CSRF-Token"] = csrf
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
@@ -696,7 +704,7 @@ cors_origins = [item.strip() for item in os.environ["CORS_ORIGINS"].split(",") i
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=cors_origins,
                    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
                    allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
-                   expose_headers=["Retry-After"])
+                   expose_headers=["Retry-After", "X-CSRF-Token"])
 
 
 async def seed_user(email, password, name, role):

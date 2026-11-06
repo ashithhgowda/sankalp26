@@ -402,10 +402,12 @@ def test_20_logout_revokes_refresh_without_access_cookie(state):
     logged = session.post(API + '/auth/login', json={'email': s['email'], 'password': s['password']}, timeout=60)
     assert logged.status_code == 200
     refresh = session.cookies.get('refresh_token')
+    csrf = session.cookies.get('csrf_token')
     for cookie in list(session.cookies):
         if cookie.name == 'access_token':
             session.cookies.clear(cookie.domain, cookie.path, cookie.name)
-    logout = session.post(API + '/auth/logout', timeout=60)
+    logout = session.post(API + '/auth/logout', headers={'X-CSRF-Token': csrf}, timeout=60)
     assert logout.status_code == 200 and logout.json()['ok'] is True
-    replay = requests.post(API + '/auth/refresh', cookies={'refresh_token': refresh}, timeout=60)
+    replay = requests.post(API + '/auth/refresh', cookies={'refresh_token': refresh, 'csrf_token': csrf},
+                           headers={'X-CSRF-Token': csrf}, timeout=60)
     assert replay.status_code == 401, 'Refresh session remains usable after logout when access cookie has expired'
