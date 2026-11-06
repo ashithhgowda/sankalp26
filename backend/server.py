@@ -9,6 +9,7 @@ from typing import Annotated, List, Literal, Optional
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
+from email_validator import EmailNotValidError, validate_email
 
 # server.py is inside the backend folder; the .env file is in the project root.
 ROOT_DIR = Path(__file__).resolve().parent
@@ -39,6 +40,7 @@ from backend.core_utils import (
     app_environment,
     audit,
     cleanup_pending_private_files,
+    clean_doc,
     enforce_rate_limit,
     frontend_url,
     new_public_id,
@@ -132,16 +134,19 @@ class MemberIn(BaseModel):
 
     @model_validator(mode="after")
     def complete_member(self):
-        values = [self.name.strip(), self.usn.strip(), self.email.strip(), self.college.strip()]
+        self.name = self.name.strip()
+        self.usn = self.usn.strip()
+        self.email = self.email.strip()
+        self.college = self.college.strip()
+        values = [self.name, self.usn, self.email, self.college]
         if any(values) and not all(values[:3]):
             raise ValueError("Each member needs a full name, USN and email")
         if any(values):
-            self.name = self.name.strip()
             self.usn = normalize_usn(self.usn)
-            self.email = normalize_email(self.email)
-            if "@" not in self.email:
+            try:
+                self.email = normalize_email(validate_email(self.email, check_deliverability=False).normalized)
+            except EmailNotValidError:
                 raise ValueError("Enter a valid member email")
-            self.college = self.college.strip()
         return self
 
 
@@ -320,7 +325,13 @@ async def create_invitation(target, purpose: str, team_id: Optional[str], base_u
     notice = await create_notification(db, user_id=target_id, kind=purpose, title=content[0],
                                        message="Use the private, single-use activation link sent to your email.",
                                        emailer=emailer, email_content=content, action_path="/activate")
-    return {"invitation_id": invitation_id, "email_status": notice["email_status"]}
+    email_status = notice["email_status"]
+    await db.invitations.update_one({"invitation_id": invitation_id}, {"$set": {
+        "email_status": email_status, "email_updated_at": now_iso()}})
+    if team_id and purpose == "member_activation":
+        await db.team_memberships.update_one({"team_id": team_id, "user_id": target_id}, {"$set": {
+            "invitation_email_status": email_status, "invitation_email_updated_at": now_iso()}})
+    return {"invitation_id": invitation_id, "email_status": email_status}
 
 
 @app.middleware("http")
@@ -364,6 +375,7 @@ async def register(body: RegisterIn, request: Request, response: Response):
         raise HTTPException(400, "Choose an available challenge topic")
     email = normalize_email(str(body.email))
     member_rows = [member for member in body.members if member.name]
+    member_frontend_url = frontend_url(request) if member_rows else None
     all_emails = [email] + [member.email for member in member_rows]
     all_usns = [body.usn] + [member.usn for member in member_rows]
     if len(set(all_emails)) != len(all_emails) or len(set(all_usns)) != len(all_usns):
@@ -421,8 +433,14 @@ async def register(body: RegisterIn, request: Request, response: Response):
                               title="Registration successful",
                               message=f"Welcome to SANKALP'26! Your team '{body.team_name.strip()}' has been registered successfully.",
                               action_path="/dashboard")
+    member_invitations = []
+    for member in member_rows:
+        target = clean_doc(await db.users.find_one({"email": member.email}))
+        invitation = await create_invitation(target, "member_activation", team_id, member_frontend_url, 72)
+        member_invitations.append({"email": member.email, **invitation})
     await audit(db, leader_user, "team.registered", "team", team_id, request, {"member_count": 1 + len(member_rows)})
-    return {"user": leader_user.public(), "token": access, "csrf_token": csrf, "team_id": team_id, "verification_required": False}
+    return {"user": leader_user.public(), "token": access, "csrf_token": csrf, "team_id": team_id,
+            "verification_required": False, "member_invitations": member_invitations}
 
 
 @api.post("/auth/invitations/inspect")
@@ -476,7 +494,8 @@ async def activate(body: ActivationIn, request: Request, response: Response):
             await db.users.update_one({"_id": ObjectId(user.id)}, {"$set": {"is_active": False}})
             raise HTTPException(400, "This account is inactive because the team registration is not confirmed")
     if invitation.get("team_id"):
-        await db.team_memberships.update_one({"team_id": invitation["team_id"], "user_id": user.id}, {"$set": {"status": "active", "activated_at": now_iso()}})
+        await db.team_memberships.update_one({"team_id": invitation["team_id"], "user_id": user.id}, {"$set": {
+            "status": "active", "activated_at": now_iso(), "invitation_accepted_at": now_iso()}})
         if invitation["purpose"] == "verify_email":
             await db.teams.update_one({"team_id": invitation["team_id"]}, {"$set": {"registration_status": "registered", "updated_at": now_iso()}})
     user = User.from_mongo(await db.users.find_one({"_id": ObjectId(user.id)}))
@@ -617,7 +636,7 @@ async def resend_activation(body: ForgotIn, request: Request):
         if not team or team.get("registration_review_status") != "not_confirmed":
             purpose = "judge_activation" if user.role == "judge" else "member_activation" if user.role == "member" else "verify_email"
             await db.invitations.update_many({"target_user_id": user.id, "used_at": None}, {"$set": {"revoked_at": now_iso()}})
-            base_url = frontend_url(request) if purpose == "judge_activation" else app_url(request)
+            base_url = frontend_url(request) if purpose in ("judge_activation", "member_activation") else app_url(request)
             await create_invitation(user, purpose, user.team_id, base_url, 72 if purpose != "verify_email" else 24)
     return {"ok": True, "message": "If an account needs activation, a fresh activation link was attempted."}
 

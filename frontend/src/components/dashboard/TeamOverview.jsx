@@ -31,13 +31,13 @@ export function TeamOverview({ team, memberships, leader, onReload }) {
     try {
       const result =
         action === "resend"
-          ? await api.post(`/invitations/${member.invitation_id}/resend`)
+          ? await api.post(`/memberships/${member.membership_id}/invitation/resend`)
           : await api.delete(`/invitations/${member.invitation_id}`);
-      toast.success(
-        action === "resend"
-          ? `Invitation refreshed · email ${result.data.email_status}`
-          : "Invitation revoked"
-      );
+      if (action === "resend" && result.data.email_status !== "sent") {
+        toast.error("Invitation was refreshed, but email delivery failed. Please retry later.");
+      } else {
+        toast.success(action === "resend" ? "Invitation email sent" : "Invitation revoked");
+      }
       onReload();
     } catch (error) {
       toast.error(formatErr(error));
@@ -147,11 +147,14 @@ export function TeamOverview({ team, memberships, leader, onReload }) {
                       <Clock3 size={13} />
                     )}
                     {member.status?.replaceAll("_", " ")}
+                    {member.invitation_email_status && member.invitation_email_status !== "not_sent"
+                      ? ` · email ${member.invitation_email_status}`
+                      : ""}
                   </span>
                   {leader &&
                     member.role === "member" &&
                     member.status !== "active" &&
-                    member.invitation_id && (
+                    member.membership_id && (
                       <>
                         <button
                           onClick={() => inviteAction(member, "resend")}
@@ -160,7 +163,7 @@ export function TeamOverview({ team, memberships, leader, onReload }) {
                         >
                           Resend
                         </button>
-                        {member.status !== "invitation_revoked" && (
+                        {member.invitation_id && member.status !== "invitation_revoked" && (
                           <button
                             onClick={() => inviteAction(member, "revoke")}
                             className="btn-ghost !px-3 !py-2 !text-[9px] text-neon"

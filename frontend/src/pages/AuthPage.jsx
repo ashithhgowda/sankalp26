@@ -118,6 +118,8 @@ function RegisterForm() {
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const setM = (i, k) => (e) =>
     setMembers(members.map((m, j) => (j === i ? { ...m, [k]: e.target.value } : m)));
+  const memberDetailsStarted = (member) =>
+    Boolean(member.name.trim() || member.usn.trim() || member.email.trim() || member.college.trim());
 
   const submit = async (e) => {
     e.preventDefault();
@@ -232,7 +234,7 @@ function RegisterForm() {
         </Select>
       </div>
 
-      {/* Optional members */}
+      {/* Optional member slots; a filled slot must identify one complete member. */}
       {members.map((m, i) => (
         <div key={i} className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
           <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.3em] text-ice">
@@ -242,6 +244,7 @@ function RegisterForm() {
             <input
               className="field"
               placeholder="Full name"
+              required={memberDetailsStarted(m)}
               value={m.name}
               onChange={setM(i, "name")}
               data-testid={`register-member-${i + 2}-name-input`}
@@ -249,6 +252,7 @@ function RegisterForm() {
             <input
               className="field"
               placeholder="USN"
+              required={memberDetailsStarted(m)}
               value={m.usn}
               onChange={setM(i, "usn")}
               data-testid={`register-member-${i + 2}-usn-input`}
@@ -257,6 +261,7 @@ function RegisterForm() {
               className="field"
               placeholder="Email"
               type="email"
+              required={memberDetailsStarted(m)}
               value={m.email}
               onChange={setM(i, "email")}
               data-testid={`register-member-${i + 2}-email-input`}
@@ -273,7 +278,7 @@ function RegisterForm() {
       ))}
 
       <p className="text-xs leading-relaxed text-white/45">
-        All team details are saved on submission. Members can be added now or updated later.
+        Leave a member slot blank if your team is smaller. Each listed member must provide a name, USN and unique email and will receive an account invitation.
       </p>
 
       <button

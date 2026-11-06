@@ -64,6 +64,7 @@ def api():
         pytest.skip(f"MongoDB Atlas is unavailable: {type(exc).__name__}")
 
     import backend.server as server
+    from backend.arena import build_router as build_arena_router
     from backend.phase1 import build_router
 
     original_db = server.db
@@ -87,6 +88,7 @@ def api():
             build_router(motor_db, server.current_user, server.require, server.hash_password, server.create_invitation),
             prefix="/api",
         )
+        app.include_router(build_arena_router(motor_db, server.current_user, server.require), prefix="/api")
         with TestClient(app) as http:
             yield {"db": test_db, "http": http, "server": server}
     finally:
@@ -96,8 +98,17 @@ def api():
         client.close()
 
 
-def test_existing_registration_and_login_remain_available(api):
-    db, http = api["db"], api["http"]
+def test_existing_registration_and_login_remain_available(api, monkeypatch):
+    db, http, server = api["db"], api["http"], api["server"]
+    deliveries = []
+
+    async def email_stub(*, to, subject, html):
+        deliveries.append((to, subject, html))
+        return None if len(deliveries) == 1 else "test-provider-id"
+
+    monkeypatch.setattr(server.emailer, "send_email", email_stub)
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("FRONTEND_URL", "http://localhost:3000")
     suffix = uuid.uuid4().hex[:8]
     topic_id = "TEST-" + suffix
     db.topics.insert_one({"topic_id": topic_id, "title": "People test topic", "enabled": True})
@@ -118,10 +129,28 @@ def test_existing_registration_and_login_remain_available(api):
         }],
     }
 
+    incomplete = {**payload, "members": [{"name": "Incomplete member"}]}
+    assert http.post("/api/auth/register", json=incomplete).status_code == 422
+    duplicate_email = {
+        **payload,
+        "members": [{
+            "name": "Duplicate email member",
+            "usn": f"TM{suffix}X",
+            "email": payload["email"],
+        }],
+    }
+    assert http.post("/api/auth/register", json=duplicate_email).status_code == 400
+
     registered = http.post("/api/auth/register", json=payload)
     assert registered.status_code == 201, registered.text
     data = registered.json()
     assert data["verification_required"] is False
+    assert data["member_invitations"][0]["email_status"] == "failed"
+    first_link = re.search(
+        r"http://localhost:3000/activate\?token=([A-Za-z0-9_-]+)",
+        deliveries[0][2],
+    )
+    assert first_link and deliveries[0][0] == payload["members"][0]["email"]
     assert http.get(
         "/api/participant/dashboard",
         headers={"Authorization": f"Bearer {data['token']}"},
@@ -133,7 +162,121 @@ def test_existing_registration_and_login_remain_available(api):
     assert login.status_code == 200
     assert login.json()["user"]["team_id"] == data["team_id"]
     assert db.users.find_one({"email": payload["email"]})["is_active"] is True
-    assert db.users.find_one({"email": payload["members"][0]["email"]})["is_active"] is False
+    member_doc = db.users.find_one({"email": payload["members"][0]["email"]})
+    assert member_doc["is_active"] is False
+    assert member_doc["team_id"] == data["team_id"]
+    member_membership = db.team_memberships.find_one({"team_id": data["team_id"], "role": "member"})
+    assert member_membership["invitation_email_status"] == "failed"
+    _, admin_auth = _auth_for(db, server, "admin")
+    admin_team = next(
+        team for team in http.get("/api/admin/teams", headers=admin_auth).json()
+        if team["team_id"] == data["team_id"]
+    )
+    admin_member = next(row for row in admin_team["memberships"] if row["role"] == "member")
+    assert admin_member["invitation_email_status"] == "failed"
+    assert admin_member["account_active"] is False
+
+    expired_at = server.now_utc() - timedelta(seconds=1)
+    db.invitations.update_one(
+        {"invitation_id": data["member_invitations"][0]["invitation_id"]},
+        {"$set": {"expires_at": expired_at}},
+    )
+    db.team_memberships.update_one(
+        {"membership_id": member_membership["membership_id"]},
+        {"$set": {"invitation_expires_at": expired_at}},
+    )
+    expired_team = next(
+        team for team in http.get("/api/admin/teams", headers=admin_auth).json()
+        if team["team_id"] == data["team_id"]
+    )
+    assert next(row for row in expired_team["memberships"] if row["role"] == "member")["invitation_expired"]
+    assert http.post(
+        "/api/auth/invitations/inspect", json={"token": first_link.group(1)}
+    ).status_code == 400
+    resent = http.post(
+        f"/api/admin/teams/{data['team_id']}/members/{member_membership['membership_id']}/invitation/resend",
+        headers=admin_auth,
+    )
+    assert resent.status_code == 200 and resent.json()["email_status"] == "sent", resent.text
+    second_link = re.search(
+        r"http://localhost:3000/activate\?token=([A-Za-z0-9_-]+)",
+        deliveries[-1][2],
+    )
+    assert second_link and deliveries[-1][0] == payload["members"][0]["email"]
+
+    activated = http.post(
+        "/api/auth/activate",
+        json={"token": second_link.group(1), "password": "Valid!Member2026"},
+    )
+    assert activated.status_code == 200, activated.text
+    assert activated.json()["user"]["role"] == "member"
+    assert activated.json()["user"]["team_id"] == data["team_id"]
+    assert http.post(
+        "/api/auth/activate",
+        json={"token": second_link.group(1), "password": "Valid!Member2026"},
+    ).status_code == 400
+    member_login = http.post(
+        "/api/auth/login",
+        json={"email": payload["members"][0]["email"], "password": "Valid!Member2026"},
+    )
+    assert member_login.status_code == 200 and member_login.json()["user"]["role"] == "member"
+    member_auth = {"Authorization": f"Bearer {member_login.json()['token']}"}
+    assert http.get("/api/participant/dashboard", headers=member_auth).json()["team"]["team_id"] == data["team_id"]
+    assert http.get("/api/arena/me", headers=member_auth).status_code == 200
+    abstract = http.post(
+        "/api/applications/abstract",
+        headers=member_auth,
+        data={"topic_id": topic_id},
+        files={"file": ("abstract.pdf", b"%PDF-1.4 test", "application/pdf")},
+    )
+    assert abstract.status_code == 403
+
+
+def test_admin_can_invite_legacy_team_member(api, monkeypatch):
+    db, http, server = api["db"], api["http"], api["server"]
+    deliveries = []
+
+    async def email_stub(*, to, subject, html):
+        deliveries.append((to, subject, html))
+        return "test-provider-id"
+
+    monkeypatch.setattr(server.emailer, "send_email", email_stub)
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("FRONTEND_URL", "http://localhost:3000")
+    team_id = str(ObjectId())
+    team = {"team_id": team_id, "name": "Legacy team", "college": "Legacy college"}
+    membership = {
+        "membership_id": f"LEGACY-{uuid.uuid4().hex[:8]}",
+        "team_id": team_id,
+        "user_id": None,
+        "name": "Legacy member",
+        "email": f"legacy-{uuid.uuid4().hex[:8]}@example.com",
+        "usn": f"LM{uuid.uuid4().hex[:6].upper()}",
+        "role": "member",
+        "status": "pending",
+    }
+    db.teams.insert_one(team)
+    db.team_memberships.insert_one(membership)
+    _, admin_auth = _auth_for(db, server, "admin")
+
+    resent = http.post(
+        f"/api/admin/teams/{team_id}/members/{membership['membership_id']}/invitation/resend",
+        headers=admin_auth,
+    )
+    assert resent.status_code == 200 and resent.json()["email_status"] == "sent", resent.text
+    member = db.users.find_one({"email": membership["email"]})
+    assert member["role"] == "member" and member["team_id"] == team_id
+    activation_link = re.search(
+        r"http://localhost:3000/activate\?token=([A-Za-z0-9_-]+)",
+        deliveries[0][2],
+    )
+    assert activation_link
+    activated = http.post(
+        "/api/auth/activate",
+        json={"token": activation_link.group(1), "password": "Valid!Member2026"},
+    )
+    assert activated.status_code == 200
+    assert activated.json()["user"]["team_id"] == team_id
 
 
 def test_admin_delete_team_cascades_only_selected_team(api):
@@ -250,6 +393,7 @@ def test_registration_confirmation_updates_every_account_and_activity(api, monke
         return "test-provider-id"
 
     monkeypatch.setattr(server.emailer, "send_email", email_stub)
+    monkeypatch.setenv("FRONTEND_URL", "https://testserver")
     team_id = str(ObjectId())
     leader_id = ObjectId(team_id)
     leader, _ = _auth_for(db, server, "team", team_id, leader_id)

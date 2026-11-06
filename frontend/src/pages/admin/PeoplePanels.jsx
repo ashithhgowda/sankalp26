@@ -159,6 +159,41 @@ function DeleteTeamButton({ team, onReload }) {
   );
 }
 
+function ResendMemberInvitationButton({ team, member, onReload }) {
+  const [busy, setBusy] = useState(false);
+
+  const resend = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post(
+        `/admin/teams/${team.team_id}/members/${member.membership_id}/invitation/resend`
+      );
+      if (data.email_status === "sent") {
+        toast.success(`Activation invitation sent to ${member.email}`);
+      } else {
+        toast.error(`Invitation created, but email delivery to ${member.email} failed.`);
+      }
+      await onReload();
+    } catch (err) {
+      toast.error(formatErr(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={resend}
+      disabled={busy}
+      className="btn-ghost !px-3 !py-2 !text-[9px] disabled:opacity-50"
+      data-testid={`admin-member-invitation-resend-${member.membership_id}`}
+    >
+      {busy ? <Loader2 size={12} className="animate-spin" /> : "Resend invitation"}
+    </button>
+  );
+}
+
 // ─── Teams panel ─────────────────────────────────────────────────────────────
 
 export function TeamsPanel({ teams, onReload }) {
@@ -260,6 +295,25 @@ export function TeamsPanel({ teams, onReload }) {
                   ) : null}
                   Membership {member.status?.replaceAll("_", " ") || "unavailable"}
                 </p>
+                {member.role === "member" && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <p className={`text-[11px] ${
+                      member.invitation_email_status === "failed" || member.invitation_expired
+                        ? "text-neon"
+                        : "text-white/40"
+                    }`}>
+                      Invitation email {member.invitation_email_status || "not sent"}
+                      {member.invitation_expired ? " · expired" : ""}
+                    </p>
+                    {!member.account_active && !member.account_activated && onReload && (
+                      <ResendMemberInvitationButton
+                        team={team}
+                        member={member}
+                        onReload={onReload}
+                      />
+                    )}
+                  </div>
+                )}
               </div>
             ))}
             </div>
