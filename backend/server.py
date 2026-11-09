@@ -131,6 +131,7 @@ class MemberIn(BaseModel):
     usn: str = Field(default="", max_length=20)
     email: str = Field(default="", max_length=254)
     college: str = Field(default="", max_length=180)
+    phone: str = Field(default="", max_length=32)
 
     @model_validator(mode="after")
     def complete_member(self):
@@ -138,7 +139,8 @@ class MemberIn(BaseModel):
         self.usn = self.usn.strip()
         self.email = self.email.strip()
         self.college = self.college.strip()
-        values = [self.name, self.usn, self.email, self.college]
+        self.phone = self.phone.strip()
+        values = [self.name, self.usn, self.email, self.college, self.phone]
         if any(values) and not all(values[:3]):
             raise ValueError("Each member needs a full name, USN and email")
         if any(values):
@@ -147,6 +149,10 @@ class MemberIn(BaseModel):
                 self.email = normalize_email(validate_email(self.email, check_deliverability=False).normalized)
             except EmailNotValidError:
                 raise ValueError("Enter a valid member email")
+            try:
+                self.phone = normalize_phone(self.phone)
+            except ValueError as exc:
+                raise ValueError("Each member needs a valid phone number") from exc
         return self
 
 
@@ -409,18 +415,19 @@ async def register(body: RegisterIn, request: Request, response: Response):
         await db.teams.insert_one(team_doc)
         await db.team_memberships.insert_one({"membership_id": new_public_id("MEM"), "team_id": team_id, "user_id": team_id,
                                               "name": leader_doc["name"], "email": email, "usn": body.usn, "college": body.college.strip(),
-                                              "role": "leader", "status": "pending_verification", "created_at": now_iso()})
+                                              "phone": body.phone, "role": "leader", "status": "pending_verification", "created_at": now_iso()})
         for member in member_rows:
             member_id = ObjectId()
             created_user_ids.append(member_id)
             member_doc = {"_id": member_id, "email": member.email, "name": member.name, "role": "member", "team_id": team_id,
                           "password_hash": None, "is_active": False, "email_verified": False, "must_change_password": False,
                           "session_version": 0, "team_name": body.team_name.strip(), "college": member.college or body.college.strip(),
-                          "usn": member.usn, "track": topic["title"], "created_at": now_iso()}
+                          "usn": member.usn, "phone": member.phone, "track": topic["title"], "created_at": now_iso()}
             await db.users.insert_one(member_doc)
             await db.team_memberships.insert_one({"membership_id": new_public_id("MEM"), "team_id": team_id, "user_id": str(member_id),
                                                   "name": member.name, "email": member.email, "usn": member.usn,
-                                                  "college": member.college or body.college.strip(), "role": "member", "status": "invited", "created_at": now_iso()})
+                                                  "college": member.college or body.college.strip(), "phone": member.phone,
+                                                  "role": "member", "status": "invited", "created_at": now_iso()})
     except DuplicateKeyError as exc:
         await db.users.delete_many({"_id": {"$in": created_user_ids}})
         await db.teams.delete_one({"team_id": team_id})

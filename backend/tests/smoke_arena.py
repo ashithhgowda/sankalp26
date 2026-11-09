@@ -8,7 +8,7 @@ s.put(f"{API}/admin/settings", headers=A, json={"phase": "registration"})
 ts = str(int(time.time()))
 lead = f"delivered+{ts}@resend.dev"; mem = f"smoke_mem_{ts}@example.com"
 r = s.post(f"{API}/auth/register", json={"email": lead, "password": "Team@123", "name": "Smoke Lead", "team_name": f"SMOKE_{ts}", "college": "AJIET", "phone": "9999999999",
-    "track": "V2V Visionaries: Collision Avoidance & Road Safety", "members": [{"name": "Mem", "usn": "4AJ", "email": mem.upper()}]})
+    "track": "V2V Visionaries: Collision Avoidance & Road Safety", "members": [{"name": "Mem", "usn": "4AJ", "email": mem.upper(), "phone": "9876543210"}]})
 print("register", r.status_code); T = {"Authorization": "Bearer " + r.json()["token"]}; team_id = r.json()["user"]["id"]
 r = s.post(f"{API}/auth/member-join", json={"email": mem, "password": "Mem@1234", "name": "Smoke Member"}); print("member-join", r.status_code, r.json()["user"]["team_name"])
 M = {"Authorization": "Bearer " + r.json()["token"]}

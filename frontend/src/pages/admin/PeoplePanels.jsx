@@ -47,6 +47,7 @@ export function ParticipantsPanel({ rows }) {
               <td className="px-5 py-4 text-white">
                 {row.name}
                 <p className="text-xs text-white/40">{row.email}</p>
+                <p className="text-xs text-white/40">Phone: {row.phone || "—"}</p>
               </td>
               <td className="px-4 py-4 text-white/60">
                 {row.role === "team" ? "Team leader" : "Member"}
@@ -278,6 +279,9 @@ export function TeamsPanel({ teams, onReload }) {
                 </p>
                 <p className="text-xs text-white/40">
                   {member.usn} · {member.email}
+                </p>
+                <p className="mt-1 text-xs text-white/40">
+                  Phone: {member.phone || "—"}
                 </p>
                 <p
                   className={`mt-1 flex items-center gap-1 text-xs ${

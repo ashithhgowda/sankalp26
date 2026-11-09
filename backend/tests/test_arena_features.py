@@ -42,7 +42,7 @@ def setup_module_data():
     requests.put(f"{API}/admin/settings", headers=A, json={"phase": "registration"})
     base = {"password": "Team@123", "college": "AJIET", "phone": "9999999999", "track": "V2V Visionaries: Collision Avoidance & Road Safety"}
     r = requests.post(f"{API}/auth/register", json={**base, "email": LEAD, "name": "TEST Lead", "team_name": f"TEST_T2_{TS}",
-                                                    "members": [{"name": "Mem", "usn": "4AJ", "email": MEM.upper()}]})
+                                                    "members": [{"name": "Mem", "usn": "4AJ", "email": MEM.upper(), "phone": "9876543210"}]})
     assert r.status_code == 200, r.text
     S["T"] = {"Authorization": "Bearer " + r.json()["token"]}; S["team_id"] = r.json()["user"]["id"]
     r = requests.post(f"{API}/auth/register", json={**base, "email": LEAD2, "name": "TEST Lead2", "team_name": f"TEST_T2b_{TS}", "members": []})
