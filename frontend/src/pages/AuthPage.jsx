@@ -102,7 +102,7 @@ function LoginForm() {
 }
 
 // ─── Register ─────────────────────────────────────────────────────────────────
-const emptyMember = { name: "", usn: "", email: "", college: "" };
+const emptyMember = { name: "", usn: "", email: "", college: "", phone: "" };
 
 function RegisterForm() {
   const { register } = useAuth();
@@ -119,7 +119,7 @@ function RegisterForm() {
   const setM = (i, k) => (e) =>
     setMembers(members.map((m, j) => (j === i ? { ...m, [k]: e.target.value } : m)));
   const memberDetailsStarted = (member) =>
-    Boolean(member.name.trim() || member.usn.trim() || member.email.trim() || member.college.trim());
+    Boolean(member.name.trim() || member.usn.trim() || member.email.trim() || member.college.trim() || member.phone.trim());
 
   const submit = async (e) => {
     e.preventDefault();
@@ -265,6 +265,17 @@ function RegisterForm() {
               value={m.email}
               onChange={setM(i, "email")}
               data-testid={`register-member-${i + 2}-email-input`}
+            />
+            <input
+              className="field"
+              placeholder="Phone Number"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              required={memberDetailsStarted(m)}
+              value={m.phone}
+              onChange={setM(i, "phone")}
+              data-testid={`register-member-${i + 2}-phone-input`}
             />
             <input
               className="field"

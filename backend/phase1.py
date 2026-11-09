@@ -731,10 +731,11 @@ def build_router(db, current_user, require, hash_password, create_invitation):
             for membership in memberships:
                 member_user = await db.users.find_one(
                     {"_id": ObjectId(membership["user_id"])} if ObjectId.is_valid(membership.get("user_id", "")) else {"_id": None},
-                    {"_id": 0, "is_active": 1, "password_hash": 1},
+                    {"_id": 0, "is_active": 1, "password_hash": 1, "phone": 1},
                 )
                 membership["account_active"] = bool(member_user and member_user.get("is_active"))
                 membership["account_activated"] = bool(member_user and member_user.get("password_hash"))
+                membership["phone"] = membership.get("phone") or (member_user or {}).get("phone")
                 expires_at = membership.get("invitation_expires_at")
                 if isinstance(expires_at, str):
                     expires_at = datetime.fromisoformat(expires_at)

@@ -101,7 +101,7 @@ def test_02_registration_validation_activation_and_member_login(state):
     payload = {'email': s['email'], 'password': s['password'], 'name': 'TEST Review Leader',
                'usn': 'TL' + s['suffix'], 'team_name': 'TEST_review_' + s['suffix'], 'college': 'TEST College',
                'phone': '9876543210', 'topic_id': s['topic'], 'members': [
-                   {'name': 'TEST Member', 'usn': 'TM' + s['suffix'], 'email': s['member_email']}]}
+                   {'name': 'TEST Member', 'usn': 'TM' + s['suffix'], 'email': s['member_email'], 'phone': '9876543211'}]}
     invalid = call('POST', '/auth/register', json={**payload, 'password': 'short'})
     assert invalid.status_code == 422 and 'detail' in invalid.json()
     r = call('POST', '/auth/register', json=payload)

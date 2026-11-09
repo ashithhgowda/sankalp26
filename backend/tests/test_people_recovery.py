@@ -128,17 +128,23 @@ def test_existing_registration_and_login_remain_available(api, monkeypatch):
             "name": "Registration test member",
             "usn": f"TM{suffix.upper()}",
             "email": f"member-{suffix}@example.com",
+            "phone": "+91 98765-43210",
         }],
     }
 
     incomplete = {**payload, "members": [{"name": "Incomplete member"}]}
     assert http.post("/api/auth/register", json=incomplete).status_code == 422
+    missing_phone = {**payload, "members": [{**payload["members"][0], "phone": ""}]}
+    assert http.post("/api/auth/register", json=missing_phone).status_code == 422
+    invalid_phone = {**payload, "members": [{**payload["members"][0], "phone": "12345"}]}
+    assert http.post("/api/auth/register", json=invalid_phone).status_code == 422
     duplicate_email = {
         **payload,
         "members": [{
             "name": "Duplicate email member",
             "usn": f"TM{suffix}X",
             "email": payload["email"],
+            "phone": "9876543210",
         }],
     }
     assert http.post("/api/auth/register", json=duplicate_email).status_code == 400
@@ -164,19 +170,41 @@ def test_existing_registration_and_login_remain_available(api, monkeypatch):
     assert login.status_code == 200
     assert login.json()["user"]["team_id"] == data["team_id"]
     assert db.users.find_one({"email": payload["email"]})["is_active"] is True
+    assert db.users.find_one({"email": payload["email"]})["phone"] == payload["phone"]
     member_doc = db.users.find_one({"email": payload["members"][0]["email"]})
     assert member_doc["is_active"] is False
     assert member_doc["team_id"] == data["team_id"]
+    assert member_doc["phone"] == "9876543210"
+    leader_membership = db.team_memberships.find_one({"team_id": data["team_id"], "role": "leader"})
+    assert leader_membership["phone"] == payload["phone"]
     member_membership = db.team_memberships.find_one({"team_id": data["team_id"], "role": "member"})
     assert member_membership["invitation_email_status"] == "failed"
+    assert member_membership["phone"] == "9876543210"
     _, admin_auth = _auth_for(db, server, "admin")
     admin_team = next(
         team for team in http.get("/api/admin/teams", headers=admin_auth).json()
         if team["team_id"] == data["team_id"]
     )
     admin_member = next(row for row in admin_team["memberships"] if row["role"] == "member")
+    admin_leader = next(row for row in admin_team["memberships"] if row["role"] == "leader")
+    assert admin_leader["phone"] == payload["phone"]
+    assert admin_member["phone"] == "9876543210"
     assert admin_member["invitation_email_status"] == "failed"
     assert admin_member["account_active"] is False
+    admin_participants = http.get("/api/admin/participants", headers=admin_auth).json()
+    assert {row["phone"] for row in admin_participants if row.get("team_id") == data["team_id"]} == {
+        payload["phone"], "9876543210"
+    }
+    db.users.update_one({"_id": member_doc["_id"]}, {"$unset": {"phone": ""}})
+    db.team_memberships.update_one(
+        {"team_id": data["team_id"], "role": "member"},
+        {"$unset": {"phone": ""}},
+    )
+    legacy_team = next(
+        team for team in http.get("/api/admin/teams", headers=admin_auth).json()
+        if team["team_id"] == data["team_id"]
+    )
+    assert next(row for row in legacy_team["memberships"] if row["role"] == "member").get("phone") is None
 
     expired_at = server.now_utc() - timedelta(seconds=1)
     db.invitations.update_one(

@@ -16,7 +16,8 @@ if sys.argv[1] == "setup":
     requests.put(f"{API}/admin/settings", headers=A, json={"phase": "registration"})
     r = requests.post(f"{API}/auth/register", json={"email": LEAD, "password": "Team@123", "name": "TEST UI Lead", "team_name": "TEST_UI_Team", "college": "AJIET",
                                                     "phone": "9999999999", "track": "V2V Visionaries: Collision Avoidance & Road Safety",
-                                                    "members": [{"name": "M1", "usn": "1", "email": MEM}, {"name": "M2", "usn": "2", "email": MEM2}]})
+                                                    "members": [{"name": "M1", "usn": "1", "email": MEM, "phone": "9876543210"},
+                                                                {"name": "M2", "usn": "2", "email": MEM2, "phone": "9876543211"}]})
     print("register", r.status_code, r.text[:200])
     requests.put(f"{API}/admin/settings", headers=A, json={"phase": "hackathon"})
 else:

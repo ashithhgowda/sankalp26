@@ -112,7 +112,7 @@ def test_02_register_activate_and_individual_login(database):
     payload = {"email": LEADER_EMAIL, "password": LEADER_PASSWORD, "name": "Phase One Leader", "usn": "4AJ26QA001",
                "team_name": "Phase One QA Core", "college": "A J Institute of Engineering and Technology",
                "phone": "9876543210", "topic_id": topic["topic_id"], "members": [
-                   {"name": "Phase One Member", "usn": "4AJ26QA002", "email": MEMBER_EMAIL, "college": ""}]}
+                   {"name": "Phase One Member", "usn": "4AJ26QA002", "email": MEMBER_EMAIL, "college": "", "phone": "9876543211"}]}
     response = requests.post(BASE + "/auth/register", json=payload, timeout=180)
     assert response.status_code == 201, response.text
     assert response.json()["verification_required"] is True
