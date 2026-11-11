@@ -5,6 +5,7 @@ import { ArrowRight, Lightbulb, Users, Code2, Rocket, MapPin } from "lucide-reac
 import { Wordmark, LogoBars } from "@/components/Wordmark";
 import { IMAGES } from "@/data/content";
 import { usePublicConfig } from "@/context/PublicConfigContext";
+import ajietLogo from "@/images/AJLOGOo.jpg.jpeg";
 
 const up = (d) => ({ initial: { opacity: 0, y: 30, filter: "blur(10px)" }, animate: { opacity: 1, y: 0, filter: "blur(0px)" }, transition: { duration: 0.9, delay: d, ease: [0.22, 1, 0.36, 1] } });
 
@@ -100,9 +101,36 @@ export default function Hero({ ready }) {
           </div>
         </motion.div>
 
-        <motion.p {...up(1.1)} animate={ready ? up(1.1).animate : up(1.1).initial} className="mt-6 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.2em] text-white/50">
-          <MapPin size={14} className="text-neon" /> A J Institute of Engineering & Technology · Mangaluru
-        </motion.p>
+        
+<motion.div
+  {...up(1.1)}
+  animate={ready ? up(1.1).animate : up(1.1).initial}
+  className="mt-6 flex flex-wrap items-center gap-4"
+>
+  {/* AJIET College Logo */}
+  <div className="h-16 w-16 shrink-0 overflow-hidden rounded-full border border-white/20 bg-white shadow-[0_0_20px_rgba(0,200,255,0.15)]">
+    <img
+      src={ajietLogo}
+      alt="AJIET College Logo"
+      className="h-full w-full object-contain"
+    />
+  </div>
+
+  {/* College Details */}
+  <div className="flex flex-wrap items-center gap-4">
+    <div className="flex flex-col gap-1">
+      <p className="font-display text-sm font-semibold uppercase tracking-[0.18em] text-white/80">
+        A J Institute of Engineering & Technology
+      </p>
+
+      <p className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.25em] text-white/45">
+        <MapPin size={13} className="text-neon" />
+        Mangaluru, Karnataka
+      </p>
+    </div>
+  </div>
+</motion.div>
+
       </div>
 
       <div className="pointer-events-none absolute bottom-10 right-8 hidden text-right font-mono text-[10px] uppercase leading-5 tracking-[0.3em] text-white/40 lg:block" data-state={a}>
