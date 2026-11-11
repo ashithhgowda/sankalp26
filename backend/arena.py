@@ -1,7 +1,7 @@
 import hashlib
 import random
 from datetime import datetime, timezone, timedelta
-from typing import List, Optional, Literal
+from typing import Dict, List, Optional, Literal
 
 from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Depends, Request
@@ -14,19 +14,15 @@ from backend.arena_generators import generate_sudoku, generate_kenken, validate_
 CATEGORIES = { 
     "logic": "Brain Teasers & Logic",
     "kenken": "KenKen",
-    "aptitude": "Aptitude",
     "predict": "Predict the Output",
     "sudoku": "Sudoku"}
 RAPID_SETS = {"binary": ("Binary Blitz", "Convert binary to decimal"), "gates": ("Gate Rush", "Identify the logic gate"),
               "protocols": ("Protocol Match", "Match the protocol to its purpose"), "false": ("Spot the Lie", "Find the incorrect statement")}
 DIFF_XP = {"easy": 10, "medium": 20, "hard": 35}
 
-APTITUDE_XP = {"easy": 5, "medium": 10, "hard": 15}
 
 
 def xp_for(category, difficulty):
-    if category == "aptitude":
-        return APTITUDE_XP[difficulty]
     if category == "rapid":
         return 0
     return DIFF_XP[difficulty]
@@ -34,28 +30,50 @@ BADGES = {
      "first_blood": ("First Blood", "Your first correct answer", 10),
     "logic_master": ("Logic Master", "Solve 5 logic puzzles", 25),
     "kenken_master": ("KenKen Master", "Solve 5 KenKen puzzles", 25),
-    "aptitude_ace": ("Aptitude Ace", "Answer 8 aptitude questions correctly", 25),
     "output_oracle": ("Output Oracle", "Predict 5 outputs correctly", 25),
     "sudoku_master": ("Sudoku Master", "Solve 3 Sudoku puzzles", 25),
     "lightning": ("Lightning Reflex", "Score a perfect rapid-fire run", 30),
-    "polymath": ("Polymath", "Complete all five puzzle categories", 40),
+    "polymath": ("Polymath", "Complete all four puzzle categories", 40),
     "arena_champion": ("Arena Champion", "Finish #1 when the Arena closes", 0),
 }
 BADGE_RULES = {"logic_master": ("logic", 5),
     "kenken_master": ("kenken", 5),
-    "aptitude_ace": ("aptitude", 8),
     "output_oracle": ("predict", 5),
     "sudoku_master": ("sudoku", 3),}
 MILESTONE_XP, DAILY_XP = 25, 10
 RAPID_SECONDS, RAPID_GRACE, RAPID_N = 60, 5, 5
 PARTICIPANTS = ("team", "member")
 IST = timezone(timedelta(hours=5, minutes=30))
-DEFAULTS = {"key": "arena", "starts_at": None, "closes_at": "2026-11-28T09:00:00+05:30", "prize": "", "announcement": "",
-            "frozen": False, "finalized": False, "champion": None, "tie_candidates": [], "disqualified": []}
+DEFAULTS = {
+    "key": "arena",
+    "starts_at": None,
+    "closes_at": "2026-11-28T09:00:00+05:30",
+    "prize": "",
+    "announcement": "",
+    "frozen": False,
+    "paused": False,
+    "manually_closed": False,
+    "finalized": False,
+    "champion": None,
+    "tie_candidates": [],
+    "disqualified": [],
+    "enabled_games": {
+        "logic": True,
+        "kenken": True,
+        "predict": True,
+        "sudoku": True,
+        "rapid": True,
+    },
+    "daily_enabled": True,
+    "difficulty_xp": {"easy": 10, "medium": 20, "hard": 35},
+    "daily_xp": 10,
+    "rapid_correct_xp": 8,
+    "rapid_time_bonus_max": 10,
+}
 
 
 class QuestionIn(BaseModel):
-    category: Literal["logic", "kenken", "aptitude", "predict", "sudoku", "rapid"]
+    category: Literal["logic", "kenken", "predict", "sudoku", "rapid"]
     set: Optional[Literal["gates", "protocols", "false"]] = None
     difficulty: Literal["easy", "medium", "hard"]
     prompt: str = Field(min_length=3)
@@ -101,6 +119,15 @@ class FinalizeIn(BaseModel):
     champion_user_id: Optional[str] = None
 
 
+class ArenaControlsIn(BaseModel):
+    enabled_games: Optional[Dict[str, bool]] = None
+    daily_enabled: Optional[bool] = None
+    difficulty_xp: Optional[Dict[str, int]] = None
+    daily_xp: Optional[int] = Field(default=None, ge=0, le=50)
+    rapid_correct_xp: Optional[int] = Field(default=None, ge=0, le=20)
+    rapid_time_bonus_max: Optional[int] = Field(default=None, ge=0, le=20)
+
+
 class FlagIn(BaseModel):
     value: bool
 
@@ -114,13 +141,23 @@ def parse_dt(v):
 
 
 def status_of(s):
-    if s["finalized"]:
+    if s.get("finalized", False):
         return "final"
-    n = datetime.now(timezone.utc)
-    if s["frozen"] or (s["closes_at"] and n >= parse_dt(s["closes_at"])):
+
+    now = datetime.now(timezone.utc)
+
+    if s.get("manually_closed", False):
         return "closed"
-    if s["starts_at"] and n < parse_dt(s["starts_at"]):
+
+    if s.get("closes_at") and now >= parse_dt(s["closes_at"]):
+        return "closed"
+
+    if s.get("paused", False):
+        return "paused"
+
+    if s.get("starts_at") and now < parse_dt(s["starts_at"]):
         return "upcoming"
+
     return "live"
 
 
@@ -156,6 +193,18 @@ def build_router(db, current_user, require):
         s = await db.arena_settings.find_one({"key": "arena"}, {"_id": 0})
         return {**DEFAULTS, **(s or {})}
 
+    async def ensure_game_available(game, snapshot=None):
+        s = snapshot if snapshot is not None else await settings()
+
+        if s.get("paused", False):
+            raise HTTPException(423, "The Arena is temporarily paused.")
+
+        enabled = s.get("enabled_games", DEFAULTS["enabled_games"])
+        if not enabled.get(game, True):
+            raise HTTPException(403, f"{game.title()} is currently disabled.")
+
+        return s
+
     async def optional_user(request: Request):
         try:
             return await current_user(request)
@@ -166,7 +215,7 @@ def build_router(db, current_user, require):
         today = datetime.now(IST).date().isoformat()
         pool = await db.arena_questions.find({
             "published": True,
-            "category": {"$in": ["logic", "aptitude", "predict"]},
+            "category": {"$in": ["logic", "predict"]},
             "difficulty": {"$in": ["medium", "hard"]},
         }).sort("slug", 1).to_list(1000)
 
@@ -192,11 +241,11 @@ def build_router(db, current_user, require):
 
     async def check_awards(user_id):
         rows = await db.arena_attempts.aggregate([
-            {"$match": {"user_id": user_id}},
+            {"$match": {"user_id": user_id, "category": {"$in": list(CATEGORIES.keys())}}},
             {"$group": {"_id": "$category", "attempted": {"$sum": 1}, "correct": {"$sum": {"$cond": ["$correct", 1, 0]}}}}]).to_list(20)
         stats = {x["_id"]: x for x in rows}
         totals = {x["_id"]: x["n"] for x in await db.arena_questions.aggregate([
-            {"$match": {"published": True, "category": {"$ne": "rapid"}}}, {"$group": {"_id": "$category", "n": {"$sum": 1}}}]).to_list(20)}
+            {"$match": {"published": True, "category": {"$in": list(CATEGORIES.keys())}}}, {"$group": {"_id": "$category", "n": {"$sum": 1}}}]).to_list(20)}
         out = []
         if sum(x["correct"] for x in rows) >= 1:
             out.append(await give_badge(user_id, "first_blood"))
@@ -206,6 +255,8 @@ def build_router(db, current_user, require):
         if all(stats.get(c, {}).get("correct", 0) >= 1 for c in CATEGORIES):
             out.append(await give_badge(user_id, "polymath"))
         for cat, st in stats.items():
+            if cat not in CATEGORIES:
+                continue
             if totals.get(cat) and st["attempted"] >= totals[cat] and st["correct"] / st["attempted"] >= 0.6:
                 out.append(await award(user_id, f"milestone:{cat}", MILESTONE_XP, f"Category cleared · {CATEGORIES[cat]}", "milestone"))
         return [a for a in out if a]
@@ -245,11 +296,44 @@ def build_router(db, current_user, require):
         return {
             "status": status_of(s), "starts_at": s["starts_at"], "closes_at": s["closes_at"], "prize": s["prize"],
             "announcement": s["announcement"], "champion": s["champion"] if s["finalized"] else None,
-            "categories": [{"key": k, "name": v, "count": counts.get(k, 0)} for k, v in CATEGORIES.items()],
-            "rapid_sets": [{"key": k, "name": v[0], "desc": v[1], "count": RAPID_N if k == "binary" else counts.get(k, 0)} for k, v in RAPID_SETS.items()],
+            "categories": [
+                {
+                    "key": k,
+                    "name": v,
+                    "count": counts.get(k, 0),
+                    "enabled": s.get("enabled_games", DEFAULTS["enabled_games"]).get(k, True),
+                }
+                for k, v in CATEGORIES.items()
+            ],
+            "rapid_sets": [
+                {
+                    "key": k,
+                    "name": v[0],
+                    "desc": v[1],
+                    "count": RAPID_N if k == "binary" else counts.get(k, 0),
+                    "enabled": s.get("enabled_games", DEFAULTS["enabled_games"]).get("rapid", True),
+                }
+                for k, v in RAPID_SETS.items()
+            ],
             "badges": [{"key": k, "name": v[0], "desc": v[1], "xp": v[2]} for k, v in BADGES.items()],
-            "daily": ({"available": True, "bonus": DAILY_XP, "date": today} if dq else None),
-            "xp_rules": {**DIFF_XP, "milestone": MILESTONE_XP, "daily": DAILY_XP, "rapid_max": 50},
+            "daily": (
+                {"available": True, "bonus": s.get("daily_xp", DAILY_XP), "date": today}
+                if dq and s.get("daily_enabled", True) else None
+            ),
+            "paused": s.get("paused", False),
+            "frozen": s.get("frozen", False),
+            "enabled_games": s.get("enabled_games", DEFAULTS["enabled_games"]),
+            "daily_enabled": s.get("daily_enabled", True),
+            "xp_rules": {
+                **s.get("difficulty_xp", DEFAULTS["difficulty_xp"]),
+                "milestone": MILESTONE_XP,
+                "daily": s.get("daily_xp", DAILY_XP),
+                "rapid_max": min(
+                    50,
+                    RAPID_N * s.get("rapid_correct_xp", 8)
+                    + s.get("rapid_time_bonus_max", 10),
+                ),
+            },
         }
 
     @r.get("/leaderboard")
@@ -268,9 +352,11 @@ def build_router(db, current_user, require):
 
     @r.get("/questions/next")
     async def next_question(
-        category: Literal["logic", "aptitude", "predict"],
+        category: Literal["logic", "predict"],
         user=Depends(participant),
     ):
+        await ensure_game_available(category)
+
         question_filter = {
             "published": True,
             "category": category,
@@ -338,7 +424,18 @@ def build_router(db, current_user, require):
 
     @r.get("/questions/daily")
     async def daily_challenge(user=Depends(participant)):
+        s = await settings()
+
+        if s.get("paused", False):
+            raise HTTPException(423, "The Arena is temporarily paused.")
+
+        if not s.get("daily_enabled", True):
+            raise HTTPException(404, "Daily Challenges are currently disabled.")
+
         today, question = await daily_question()
+
+        if question:
+            await ensure_game_available(question["category"], s)
 
         if not question:
             raise HTTPException(
@@ -358,12 +455,17 @@ def build_router(db, current_user, require):
             "attempted": bool(previous_attempt),
             "daily": True,
             "date": today,
-            "bonus": DAILY_XP,
+            "bonus": s.get("daily_xp", DAILY_XP),
         }
     # ---------- participant ----------
     @r.post("/questions/{qid}/open")
     async def open_question(qid: str, user=Depends(participant)):
         if not ObjectId.is_valid(qid):
+            raise HTTPException(404, "Question not found")
+        question = await db.arena_questions.find_one(
+            {"_id": ObjectId(qid), "published": True}
+        )
+        if not question or question.get("category") not in CATEGORIES:
             raise HTTPException(404, "Question not found")
         await db.arena_opens.update_one({"user_id": user.id, "question_id": qid}, {"$setOnInsert": {"opened_at": now_iso()}}, upsert=True)
         return {"ok": True}
@@ -371,17 +473,19 @@ def build_router(db, current_user, require):
     @r.post("/questions/{qid}/answer")
     async def answer(qid: str, body: AnswerIn, user=Depends(participant)):
         q = await db.arena_questions.find_one({"_id": ObjectId(qid), "published": True}) if ObjectId.is_valid(qid) else None
-        if not q or q["category"] == "rapid":
+        if not q or q.get("category") not in CATEGORIES:
             raise HTTPException(404, "Question not found")
         if body.selected >= len(q["options"]):
             raise HTTPException(400, "Invalid option")
         s = await settings()
         st = status_of(s)
+        game_enabled = s.get("enabled_games", DEFAULTS["enabled_games"]).get(q["category"], True)
         correct = body.selected == q["answer_index"]
         await db.arena_events.insert_one({"user_id": user.id, "at": now_iso(), "type": "answer"})
         res = {"correct": correct, "correct_index": q["answer_index"], "explanation": q["explanation"], "xp_awarded": 0, "awards": [], "practice": True, "note": ""}
-        if st != "live" or user.id in s["disqualified"]:
-            res["note"] = "Practice mode — the Arena is not accepting scores right now." if st != "live" else "Practice mode — scoring disabled for this account."
+        if (st != "live" or s.get("paused", False) or s.get("frozen", False)
+                or not game_enabled or user.id in s.get("disqualified", [])):
+            res["note"] = "Practice mode — scoring is currently disabled for this game or account."
             return res
         opened = await db.arena_opens.find_one({"user_id": user.id, "question_id": qid})
         elapsed = int((datetime.now(timezone.utc) - parse_dt(opened["opened_at"])).total_seconds() * 1000) if opened else None
@@ -395,8 +499,18 @@ def build_router(db, current_user, require):
         if correct:
             awards = [await award(user.id, f"q:{qid}", q["xp"], f"Solved · {q['prompt'][:60]}", "question")]
             today, dq = await daily_question()
-            if dq and str(dq["_id"]) == qid:
-                awards.append(await award(user.id, f"daily:{today}", DAILY_XP, "Daily challenge bonus", "daily"))
+            if (
+                dq
+                and str(dq["_id"]) == qid
+                and s.get("daily_enabled", True)
+            ):
+                awards.append(await award(
+                    user.id,
+                    f"daily:{today}",
+                    s.get("daily_xp", DAILY_XP),
+                    "Daily challenge bonus",
+                    "daily",
+                ))
             awards += await check_awards(user.id)
             res["awards"] = [a for a in awards if a]
             res["xp_awarded"] = sum(a["xp"] for a in res["awards"])
@@ -409,14 +523,21 @@ def build_router(db, current_user, require):
 
     @r.post("/puzzles/start")
     async def puzzle_start(body: PuzzleStartIn, user=Depends(participant)):
-        s = await settings()
+        s = await ensure_game_available(body.game)
 
         if body.game == "sudoku":
             puzzle = generate_sudoku(body.difficulty)
         else:
             puzzle = generate_kenken(body.difficulty)
 
-        scored = status_of(s) == "live" and user.id not in s["disqualified"]
+        scored = (
+            status_of(s) == "live"
+            and not s.get("frozen", False)
+            and user.id not in s["disqualified"]
+        )
+
+        xp_table = s.get("difficulty_xp", DEFAULTS["difficulty_xp"])
+        puzzle_xp = int(xp_table.get(body.difficulty, DIFF_XP[body.difficulty]))
 
         doc = {
             "user_id": user.id,
@@ -425,7 +546,7 @@ def build_router(db, current_user, require):
             "grid": puzzle["grid"],
             "solution": puzzle["solution"],
             "cages": puzzle.get("cages", []),
-            "xp": xp_for(body.game, body.difficulty),
+            "xp": puzzle_xp,
             "scored": scored,
             "finished": False,
             "started_at": now_iso(),
@@ -499,6 +620,9 @@ def build_router(db, current_user, require):
         eligible = (
             puzzle["scored"]
             and status_of(current) == "live"
+            and not current.get("frozen", False)
+            and not current.get("paused", False)
+            and current.get("enabled_games", DEFAULTS["enabled_games"]).get(puzzle["game"], True)
             and user.id not in current["disqualified"]
         )
 
@@ -535,6 +659,7 @@ def build_router(db, current_user, require):
 
     @r.post("/rapid/start")
     async def rapid_start(body: RapidStartIn, user=Depends(participant)):
+        s = await ensure_game_available("rapid")
         rng = random.Random()
         if body.set == "binary":
             qs = [binary_question(rng) for _ in range(RAPID_N)]
@@ -544,8 +669,11 @@ def build_router(db, current_user, require):
                 raise HTTPException(400, "Not enough questions in this set yet")
             qs = [{"qid": str(d["_id"]), "prompt": d["prompt"], "code": d.get("code", ""), "options": d["options"],
                    "answer_index": d["answer_index"], "explanation": d["explanation"]} for d in rng.sample(pool, RAPID_N)]
-        s = await settings()
-        scored = status_of(s) == "live" and user.id not in s["disqualified"]
+        scored = (
+            status_of(s) == "live"
+            and not s.get("frozen", False)
+            and user.id not in s["disqualified"]
+        )
         run = {"user_id": user.id, "set": body.set, "questions": qs, "started_at": now_iso(), "finished": False, "scored": scored}
         try:
             res = await db.arena_rapid_runs.insert_one(run)
@@ -561,6 +689,7 @@ def build_router(db, current_user, require):
     async def rapid_submit(run_id: str, body: RapidSubmitIn, user=Depends(participant)):
         if not ObjectId.is_valid(run_id):
             raise HTTPException(404, "Run not found")
+
         run = await db.arena_rapid_runs.find_one_and_update({"_id": ObjectId(run_id), "user_id": user.id, "finished": False}, {"$set": {"finished": True, "finished_at": now_iso()}})
         if not run:
             raise HTTPException(400, "This run was already submitted")
@@ -571,14 +700,25 @@ def build_router(db, current_user, require):
                    for q, a in zip(run["questions"], answers)]
         n_correct = sum(x["correct"] for x in results)
         secs_left = max(0, RAPID_SECONDS - int(elapsed))
-        xp = min(50, n_correct * 8 + (min(10, secs_left // 6) if n_correct >= 4 else 0))
+        current = await settings()
+        correct_xp = current.get("rapid_correct_xp", 8)
+        time_bonus_max = current.get("rapid_time_bonus_max", 10)
+        time_bonus = (
+            min(time_bonus_max, secs_left * time_bonus_max // RAPID_SECONDS)
+            if time_bonus_max > 0 else 0
+        )
+        xp = min(50, n_correct * correct_xp + (time_bonus if n_correct >= 4 else 0))
         awards, note = [], ""
         if late:
             note = "Time expired — this run does not score."
         elif not run["scored"]:
             note = "Practice run — XP for this set is only awarded on your first run."
-        elif status_of(await settings()) != "live":
-            note = "The Arena closed during your run."
+        elif (
+            status_of(current) != "live"
+            or current.get("frozen", False)
+            or not current.get("enabled_games", DEFAULTS["enabled_games"]).get("rapid", True)
+        ):
+            note = "The Arena is not currently accepting scores."
         elif n_correct:
             awards.append(await award(user.id, f"rapid:{run['set']}", xp, f"Rapid fire · {RAPID_SETS[run['set']][0]} ({n_correct}/5)", "rapid"))
             if n_correct == RAPID_N:
@@ -592,10 +732,10 @@ def build_router(db, current_user, require):
         rows = await standings(include_dq=True)
         mine = next((x for x in rows if x["user_id"] == user.id), None)
         cats = {x["_id"]: x for x in await db.arena_attempts.aggregate([
-            {"$match": {"user_id": user.id}},
+            {"$match": {"user_id": user.id, "category": {"$in": list(CATEGORIES.keys())}}},
             {"$group": {"_id": "$category", "attempted": {"$sum": 1}, "correct": {"$sum": {"$cond": ["$correct", 1, 0]}}}}]).to_list(20)}
         totals = {x["_id"]: x["n"] for x in await db.arena_questions.aggregate([
-            {"$match": {"published": True}}, {"$group": {"_id": {"$ifNull": ["$set", "$category"]}, "n": {"$sum": 1}}}]).to_list(50)}
+            {"$match": {"published": True, "category": {"$in": list(CATEGORIES.keys())}}}, {"$group": {"_id": {"$ifNull": ["$set", "$category"]}, "n": {"$sum": 1}}}]).to_list(50)}
         history = await db.arena_xp.find({"user_id": user.id}, {"_id": 0, "user_id": 0}).sort("created_at", -1).to_list(60)
         rapid_done = [x["ref"].split(":")[1] for x in history if x["kind"] == "rapid"]
         rapid_tried = await db.arena_rapid_runs.distinct("set", {"user_id": user.id, "scored": True})
@@ -614,7 +754,10 @@ def build_router(db, current_user, require):
     # ---------- admin ----------
     @r.get("/admin/questions")
     async def admin_questions(_=Depends(admin)):
-        return [admin_q(d) for d in await db.arena_questions.find().sort([("category", 1), ("slug", 1)]).to_list(2000)]
+        supported = [*CATEGORIES.keys(), "rapid"]
+        return [admin_q(d) for d in await db.arena_questions.find(
+            {"category": {"$in": supported}}
+        ).sort([("category", 1), ("slug", 1)]).to_list(2000)]
 
     def _validate(body: QuestionIn):
         if body.answer_index >= len(body.options):
@@ -676,6 +819,115 @@ def build_router(db, current_user, require):
         await db.arena_settings.update_one({"key": "arena"}, {"$set": patch}, upsert=True)
         return await admin_get_settings()
 
+    @r.put("/admin/controls")
+    async def admin_update_controls(body: ArenaControlsIn, _=Depends(admin)):
+        patch = body.model_dump(exclude_unset=True)
+        current = await settings()
+
+        if "enabled_games" in patch:
+            allowed = {"logic", "kenken", "predict", "sudoku", "rapid"}
+            supplied = patch["enabled_games"]
+
+            if not isinstance(supplied, dict) or not set(supplied).issubset(allowed):
+                raise HTTPException(400, "Invalid game control key")
+
+            if any(not isinstance(v, bool) for v in supplied.values()):
+                raise HTTPException(400, "Game switches must be true or false")
+
+            patch["enabled_games"] = {
+                **current.get("enabled_games", DEFAULTS["enabled_games"]),
+                **supplied,
+            }
+
+        if "difficulty_xp" in patch:
+            supplied = patch["difficulty_xp"]
+            allowed = {"easy", "medium", "hard"}
+
+            if not isinstance(supplied, dict) or not set(supplied).issubset(allowed):
+                raise HTTPException(400, "Invalid difficulty XP key")
+
+            if any(
+                isinstance(v, bool) or not isinstance(v, int) or v < 0 or v > 100
+                for v in supplied.values()
+            ):
+                raise HTTPException(400, "Difficulty XP must be between 0 and 100")
+
+            patch["difficulty_xp"] = {
+                **current.get("difficulty_xp", DEFAULTS["difficulty_xp"]),
+                **supplied,
+            }
+
+        await db.arena_settings.update_one(
+            {"key": "arena"},
+            {"$set": patch},
+            upsert=True,
+        )
+        return await admin_get_settings()
+
+    @r.post("/admin/start-now")
+    async def admin_start_now(_=Depends(admin)):
+        s = await settings()
+
+        if s.get("finalized") or s.get("manually_closed"):
+            raise HTTPException(409, "Reopen the Arena before starting it again")
+
+        if s.get("closes_at") and datetime.now(timezone.utc) >= parse_dt(s["closes_at"]):
+            raise HTTPException(409, "The scheduled closing time has already passed")
+
+        await db.arena_settings.update_one(
+            {"key": "arena"},
+            {"$set": {
+                "starts_at": now_iso(),
+                "paused": False,
+            }},
+            upsert=True,
+        )
+        return await admin_get_settings()
+
+    @r.post("/admin/pause")
+    async def admin_pause(_=Depends(admin)):
+        s = await settings()
+
+        if status_of(s) != "live":
+            raise HTTPException(409, "Only a live Arena can be paused")
+
+        await db.arena_settings.update_one(
+            {"key": "arena"},
+            {"$set": {"paused": True}},
+            upsert=True,
+        )
+        return await admin_get_settings()
+
+    @r.post("/admin/resume")
+    async def admin_resume(_=Depends(admin)):
+        s = await settings()
+
+        if s.get("finalized") or s.get("manually_closed"):
+            raise HTTPException(409, "Reopen the Arena before resuming")
+
+        if s.get("closes_at") and datetime.now(timezone.utc) >= parse_dt(s["closes_at"]):
+            raise HTTPException(409, "The scheduled closing time has already passed")
+
+        await db.arena_settings.update_one(
+            {"key": "arena"},
+            {"$set": {"paused": False}},
+            upsert=True,
+        )
+        return await admin_get_settings()
+
+    @r.post("/admin/close")
+    async def admin_close(_=Depends(admin)):
+        await db.arena_settings.update_one(
+            {"key": "arena"},
+            {"$set": {
+                "manually_closed": True,
+                "paused": False,
+                "frozen": True,
+            }},
+            upsert=True,
+        )
+        return await admin_get_settings()
+
     @r.post("/admin/freeze")
     async def admin_freeze(body: FlagIn, _=Depends(admin)):
         await db.arena_settings.update_one({"key": "arena"}, {"$set": {"frozen": body.value}}, upsert=True)
@@ -684,8 +936,11 @@ def build_router(db, current_user, require):
     @r.post("/admin/finalize")
     async def admin_finalize(body: FinalizeIn, _=Depends(admin)):
         s = await settings()
-        if status_of(s) == "live" or status_of(s) == "upcoming":
-            raise HTTPException(400, "Freeze or close the Arena before finalising")
+        if (
+            status_of(s) in ("live", "upcoming", "paused")
+            and not s.get("frozen", False)
+        ):
+            raise HTTPException(400, "Freeze scoring or close the Arena before finalising")
         rows = await standings()
         if not rows:
             raise HTTPException(400, "No scored participants yet")
@@ -708,13 +963,24 @@ def build_router(db, current_user, require):
     @r.post("/admin/reopen")
     async def admin_reopen(_=Depends(admin)):
         await db.arena_badges.delete_many({"badge": "arena_champion"})
-        await db.arena_settings.update_one({"key": "arena"}, {"$set": {"finalized": False, "frozen": False, "champion": None, "tie_candidates": []}}, upsert=True)
+        await db.arena_settings.update_one(
+            {"key": "arena"},
+            {"$set": {
+                "finalized": False,
+                "frozen": False,
+                "paused": False,
+                "manually_closed": False,
+                "champion": None,
+                "tie_candidates": [],
+            }},
+            upsert=True,
+        )
         return await admin_get_settings()
 
     @r.get("/admin/participants")
     async def admin_participants(_=Depends(admin)):
         rows = await standings(include_dq=True)
-        att = {x["_id"]: x for x in await db.arena_attempts.aggregate([{"$group": {
+        att = {x["_id"]: x for x in await db.arena_attempts.aggregate([{"$match": {"category": {"$in": list(CATEGORIES.keys())}}}, {"$group": {
             "_id": "$user_id", "attempts": {"$sum": 1}, "correct": {"$sum": {"$cond": ["$correct", 1, 0]}},
             "fast": {"$sum": {"$cond": [{"$and": ["$correct", {"$lt": [{"$ifNull": ["$elapsed_ms", 999999]}, 3000]}]}, 1, 0]}},
             "unopened": {"$sum": {"$cond": [{"$eq": ["$elapsed_ms", None]}, 1, 0]}}}}]).to_list(10000)}
@@ -754,6 +1020,9 @@ async def setup_arena(db):
     await db.arena_opens.create_index([("user_id", 1), ("question_id", 1)], unique=True)
     await db.arena_rapid_runs.create_index([("user_id", 1), ("set", 1)], unique=True, partialFilterExpression={"scored": True})
     await db.arena_events.create_index("user_id")
+    supported_seed_categories = set(CATEGORIES) | {"rapid"}
     for q in SEED_QUESTIONS:
+        if q.get("category") not in supported_seed_categories:
+            continue
         doc = {**q, "xp": xp_for(q["category"], q["difficulty"]), "published": True, "created_at": now_iso()}
         await db.arena_questions.update_one({"slug": q["slug"]}, {"$setOnInsert": doc}, upsert=True)

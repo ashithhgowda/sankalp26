@@ -217,7 +217,7 @@ export default function QuestionPlayer({
       if (isDaily) {
         response = await api.get("/arena/questions/daily");
       } else {
-        if (!["logic", "aptitude", "predict"].includes(category)) {
+        if (!["logic", "predict"].includes(category)) {
           throw new Error("Invalid question category.");
         }
 
@@ -686,4 +686,3 @@ export default function QuestionPlayer({
     </motion.div>
   );
 }
-
