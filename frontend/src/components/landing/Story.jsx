@@ -187,7 +187,7 @@ export default function Story() {
             ["24", "Hours"],
             ["₹75k", "Prize pool"],
             ["3", "Max members"],
-            ["06", "Challenges"],
+            ["07", "Challenges"],
           ].map(([v, l], i) => (
             <Reveal key={l} delay={i * 0.08}>
               <div
