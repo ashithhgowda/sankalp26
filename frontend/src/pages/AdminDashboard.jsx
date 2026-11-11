@@ -10,6 +10,7 @@ import {
   ListChecks,
   Loader2,
   ReceiptIndianRupee,
+  Search,
   Scale,
   UsersRound,
 } from "lucide-react";
@@ -62,6 +63,7 @@ const TABS = [
 
 export default function AdminDashboard() {
   const [data, setData] = useState(null);
+  const [peopleSearch, setPeopleSearch] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -140,6 +142,35 @@ export default function AdminDashboard() {
   }
 
   const { overview } = data;
+  const searchTerm = peopleSearch.trim().toLowerCase();
+  const peopleTeams = searchTerm
+    ? data.teams.filter((team) =>
+        [
+          team.name,
+          team.college,
+          ...(team.memberships || []).flatMap((member) => [
+            member.name,
+            member.usn,
+            member.phone,
+          ]),
+        ].some((value) =>
+          String(value || "").toLowerCase().includes(searchTerm)
+        )
+      )
+    : data.teams;
+  const peopleParticipants = searchTerm
+    ? data.participants.filter((participant) =>
+        [
+          participant.name,
+          participant.usn,
+          participant.phone,
+          participant.college,
+          participant.team_name,
+        ].some((value) =>
+          String(value || "").toLowerCase().includes(searchTerm)
+        )
+      )
+    : data.participants;
 
   // ----------------------------------------------------
   // MAIN DASHBOARD
@@ -262,8 +293,40 @@ export default function AdminDashboard() {
         {/* PEOPLE */}
         <TabsContent value="people">
           <div className="space-y-7">
-            <TeamsPanel teams={data.teams} onDeleteReload={load} />
-            <ParticipantsPanel rows={data.participants} />
+            <label className="relative block">
+              <Search
+                size={16}
+                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/40"
+              />
+              <input
+                type="search"
+                value={peopleSearch}
+                onChange={(event) => setPeopleSearch(event.target.value)}
+                placeholder="Search teams and participants..."
+                aria-label="Search teams and participants"
+                className="field pl-11"
+                data-testid="admin-people-search"
+              />
+            </label>
+            {searchTerm && !peopleTeams.length && !peopleParticipants.length ? (
+              <p className="glass rounded-3xl p-8 text-center text-white/50">
+                No results found
+              </p>
+            ) : (
+              <>
+                <TeamsPanel
+                  teams={peopleTeams}
+                  onDeleteReload={load}
+                  emptyMessage={searchTerm ? "No teams match your search." : undefined}
+                />
+                <ParticipantsPanel
+                  rows={peopleParticipants}
+                  emptyMessage={
+                    searchTerm ? "No participants match your search." : undefined
+                  }
+                />
+              </>
+            )}
           </div>
         </TabsContent>
 

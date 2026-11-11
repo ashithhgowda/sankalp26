@@ -14,11 +14,11 @@ function registrationLabel(status) {
   return status === "confirmed" ? "Confirmed" : "Not Confirmed";
 }
 
-export function ParticipantsPanel({ rows }) {
+export function ParticipantsPanel({ rows, emptyMessage = "No participants yet." }) {
   if (!rows.length)
     return (
       <p className="glass rounded-3xl p-10 text-center text-white/50">
-        No participants yet.
+        {emptyMessage}
       </p>
     );
   return (
@@ -197,11 +197,16 @@ function ResendMemberInvitationButton({ team, member, onReload }) {
 
 // ─── Teams panel ─────────────────────────────────────────────────────────────
 
-export function TeamsPanel({ teams, onReload, onDeleteReload }) {
+export function TeamsPanel({
+  teams,
+  onReload,
+  onDeleteReload,
+  emptyMessage = "No teams registered.",
+}) {
   if (!teams.length)
     return (
       <p className="glass rounded-3xl p-10 text-center text-white/50">
-        No teams registered.
+        {emptyMessage}
       </p>
     );
 
