@@ -404,8 +404,8 @@ export default function ArenaHome() {
                 </p>
 
                 <p className="mt-2 max-w-md text-white/60">
-                  Explore logic puzzles, aptitude, technical challenges,
-                  Sudoku, KenKen and rapid-fire rounds.
+                  Explore Brain Teasers & Logic, KenKen, Sudoku,
+                  Predict the Output and Rapid Fire.
                 </p>
 
                 <span className="mt-6 inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.25em] text-ice">
