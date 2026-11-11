@@ -33,6 +33,7 @@ function getCategoryIcon(category) {
 function CategoryCard({ category, onPlay }) {
   const Icon = getCategoryIcon(category.key);
   const isPuzzle = PUZZLE_GAMES.includes(category.key);
+  const disabled = category.enabled === false;
 
   return (
     <motion.div
@@ -45,7 +46,7 @@ function CategoryCard({ category, onPlay }) {
         <Icon size={23} className="text-ice" />
 
         <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-white/40">
-          {isPuzzle ? "Puzzle mode" : category.count > 0 ? "Challenge mode" : "Coming soon"}
+          {disabled ? "Disabled" : isPuzzle ? "Puzzle mode" : category.count > 0 ? "Challenge mode" : "Coming soon"}
         </span>
       </div>
 
@@ -55,11 +56,12 @@ function CategoryCard({ category, onPlay }) {
 
       <button
         onClick={onPlay}
-        className="btn-ghost mt-5 !py-3 !text-[10px]"
+        disabled={disabled}
+        className="btn-ghost mt-5 !py-3 !text-[10px] disabled:cursor-not-allowed disabled:opacity-40"
         data-testid={`arena-play-category-${category.key}`}
       >
         <Play size={13} />
-        {isPuzzle ? "Play puzzle" : "Play"}
+        {disabled ? "Disabled" : isPuzzle ? "Play puzzle" : "Play"}
       </button>
     </motion.div>
   );
@@ -211,19 +213,27 @@ export default function ArenaPlay() {
         {state?.rapid_sets?.map((set) => {
           const done = me?.rapid_done?.includes(set.key);
           const used = me?.rapid_used?.includes(set.key);
+          const disabled = set.enabled === false;
 
           return (
             <button
               key={set.key}
-              onClick={() => playRapid(set, used)}
+              disabled={disabled}
+              onClick={() => {
+                if (!disabled) playRapid(set, used);
+              }}
               data-testid={`arena-rapid-${set.key}`}
-              className="glass-strong glow-border card-scan rounded-3xl p-6 text-left transition-transform duration-300 hover:-translate-y-1"
+              className={`glass-strong glow-border card-scan rounded-3xl p-6 text-left transition-transform duration-300 ${
+                disabled ? "cursor-not-allowed opacity-40" : "hover:-translate-y-1"
+              }`}
             >
               <div className="flex items-center justify-between">
                 <Timer size={22} className="text-neon" />
 
                 <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/40">
-                  {done
+                  {disabled
+                    ? "Disabled"
+                    : done
                     ? "XP claimed"
                     : used
                       ? "Practice"

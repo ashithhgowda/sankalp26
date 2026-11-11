@@ -11,7 +11,6 @@ export const BADGE_ICONS = { first_blood: Droplet, logic_master: Brain, debuggin
 export const CAT_ICONS = { 
   logic: Puzzle,
   kenken: Puzzle,
-  aptitude: Cpu,
   sudoku: Puzzle,
   quiz: Cpu,
   debug: Bug,
