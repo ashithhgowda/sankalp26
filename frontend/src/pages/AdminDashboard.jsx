@@ -262,7 +262,7 @@ export default function AdminDashboard() {
         {/* PEOPLE */}
         <TabsContent value="people">
           <div className="space-y-7">
-            <TeamsPanel teams={data.teams} />
+            <TeamsPanel teams={data.teams} onDeleteReload={load} />
             <ParticipantsPanel rows={data.participants} />
           </div>
         </TabsContent>

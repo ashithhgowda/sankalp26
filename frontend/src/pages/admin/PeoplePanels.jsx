@@ -197,7 +197,7 @@ function ResendMemberInvitationButton({ team, member, onReload }) {
 
 // ─── Teams panel ─────────────────────────────────────────────────────────────
 
-export function TeamsPanel({ teams, onReload }) {
+export function TeamsPanel({ teams, onReload, onDeleteReload }) {
   if (!teams.length)
     return (
       <p className="glass rounded-3xl p-10 text-center text-white/50">
@@ -234,7 +234,7 @@ export function TeamsPanel({ teams, onReload }) {
                   </p>
                 </div>
                 {onReload && <RegistrationToggle team={team} onReload={onReload} />}
-                {onReload && <DeleteTeamButton team={team} onReload={onReload} />}
+                {onDeleteReload && <DeleteTeamButton team={team} onReload={onDeleteReload} />}
               </div>
             </div>
           </div>
