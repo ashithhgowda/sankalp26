@@ -6,7 +6,7 @@ import { Wordmark, LogoBars } from "@/components/Wordmark";
 import { IMAGES } from "@/data/content";
 import { usePublicConfig } from "@/context/PublicConfigContext";
 import ajietLogo from "@/images/AJLOGOo.jpg.jpeg";
-import resultsPdf from "@/images/results.pdf";
+import resultsPdf from "@/images/finalresult.pdf";
 
 const up = (d) => ({ initial: { opacity: 0, y: 30, filter: "blur(10px)" }, animate: { opacity: 1, y: 0, filter: "blur(0px)" }, transition: { duration: 0.9, delay: d, ease: [0.22, 1, 0.36, 1] } });
 
@@ -85,7 +85,7 @@ export default function Hero({ ready }) {
         <motion.div {...up(0.8)} animate={ready ? up(0.8).animate : up(0.8).initial} className="mt-8 flex flex-wrap items-center gap-3 sm:gap-4">
           <Link to="/auth?mode=register" className="btn-neon" data-testid="hero-register-cta">Register team <ArrowRight size={16} /></Link>
           <a href="#tracks" className="btn-ghost" data-testid="hero-explore-cta">Explore challenges</a>
-          <a href={resultsPdf} download="results.pdf" className="btn-ghost">Results Out</a>
+          <a href={resultsPdf} download="finalresult.pdf" className="btn-ghost">Results Out</a>
         </motion.div>
 
         <motion.div {...up(1)} animate={ready ? up(1).animate : up(1).initial}
