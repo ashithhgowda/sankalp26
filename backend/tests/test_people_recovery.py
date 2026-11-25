@@ -553,7 +553,7 @@ def test_abstract_status_activity_is_transition_only(api, monkeypatch):
         "leader_id": team_id,
         "name": "People test team",
         "registration_status": "registered",
-        "registration_review_status": "confirmed",
+        "registration_review_status": "not_confirmed",
     })
     db.applications.insert_one({
         "application_id": "TEST-" + uuid.uuid4().hex,
@@ -565,6 +565,12 @@ def test_abstract_status_activity_is_transition_only(api, monkeypatch):
     })
     application_id = db.applications.find_one({"team_id": team_id})["application_id"]
 
+    expected_registration_status = {
+        "under_review": "not_confirmed",
+        "selected": "confirmed",
+        "rejected": "not_confirmed",
+        "pending": "not_confirmed",
+    }
     for status in ("under_review", "selected", "rejected", "pending", "pending"):
         response = http.patch(
             f"/api/admin/applications/{application_id}",
@@ -572,13 +578,19 @@ def test_abstract_status_activity_is_transition_only(api, monkeypatch):
             json={"status": status, "admin_notes": "Test review"},
         )
         assert response.status_code == 200, response.text
+        expected = expected_registration_status[status]
+        assert db.teams.find_one({"team_id": team_id})["registration_review_status"] == expected
+        teams = http.get("/api/admin/teams", headers=admin_auth).json()
+        assert next(row for row in teams if row["team_id"] == team_id)["registration_review_status"] == expected
+        participants = http.get("/api/admin/participants", headers=admin_auth).json()
+        assert next(row for row in participants if row.get("team_id") == team_id)["registration_review_status"] == expected
 
     notifications = list(db.notifications.find({"user_id": team_id, "kind": {"$regex": "^abstract_"}}))
     assert [notice["kind"] for notice in notifications].count("abstract_under_review") == 1
     assert [notice["kind"] for notice in notifications].count("abstract_selected") == 1
     assert [notice["kind"] for notice in notifications].count("abstract_rejected") == 1
     assert [notice["kind"] for notice in notifications].count("abstract_pending") == 1
-    assert db.teams.find_one({"team_id": team_id})["registration_review_status"] == "confirmed"
+    assert db.teams.find_one({"team_id": team_id})["registration_review_status"] == "not_confirmed"
     assert db.users.find_one({"_id": leader_id})["is_active"] is True
 
 

@@ -1087,6 +1087,10 @@ def build_router(db, current_user, require, hash_password, create_invitation):
         if status_changed and app.get("team_id"):
             team = await db.teams.find_one({"team_id": app["team_id"]}, {"_id": 0})
             leader_user = await db.users.find_one({"_id": ObjectId(team["leader_id"])}, {"_id": 0})
+            await db.teams.update_one({"team_id": app["team_id"]}, {"$set": {
+                "registration_review_status": "confirmed" if body.status == "selected" else "not_confirmed",
+                "updated_at": now_iso(),
+            }})
             if body.status == "selected":
                 protected_states = {"payment_verified", "registration_confirmed"}
                 next_state = team.get("registration_status") if team.get("registration_status") in protected_states else "selected_awaiting_payment"
